@@ -1,0 +1,2280 @@
+<meta charset="utf-8">
+<title>Tallgrass</title>
+<meta name="description" content="Keyboard-first tile map editor for top-down, GBA-era style RPG worlds.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" media="print" onload="this.media='all'">
+<style>
+@font-face{font-family:"Silkscreen";src:url("fonts/Silkscreen-Regular.ttf") format("truetype");font-display:swap}
+:root{
+  --ground:#0d1119; --panel:#131926; --raised:#1a2233; --raised-2:#212b3f; --line:#252f44;
+  --text:#d4dae6; --dim:#7b869d; --faint:#48536b; --canvas:#090c12; --ink:#0d1119;
+  --normal:#6ea8fe; --insert:#8ccf5e; --erase:#ff7b72; --visual:#c29bff; --command:#f0c152; --play:#4fd1c5;
+  --mode:var(--normal);
+  --mono:"JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --pixel:"Silkscreen", "JetBrains Mono", ui-monospace, monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--ground);color:var(--text);font:13px/1.45 var(--mono);padding:12px 16px;overflow:hidden}
+button{font:inherit;color:inherit}
+kbd{font:11px/1 var(--mono);background:var(--raised-2);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:2px 5px;color:var(--text);white-space:nowrap}
+img.px{image-rendering:pixelated}
+
+#app{height:100%;display:grid;grid-template-columns:272px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto auto;
+  grid-template-areas:"head head" "side stage" "status status" "cmd cmd";
+  border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}
+
+/* header */
+header{grid-area:head;display:flex;align-items:center;gap:14px 18px;padding:8px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:8px;font:15px/1 var(--pixel);letter-spacing:.04em}
+.brand img{width:22px;height:22px;border-radius:4px}
+#layers{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+.chip{appearance:none;border:1px solid var(--line);background:transparent;border-radius:6px;padding:4px 10px;cursor:pointer;color:var(--dim);font-size:12px}
+.chip:hover{color:var(--text);border-color:var(--faint)}
+.chip.on{background:var(--raised-2);color:var(--text);border-color:var(--mode)}
+.chip:focus-visible,.tb:focus-visible,.ghost:focus-visible{outline:2px solid var(--mode);outline-offset:1px}
+#layers .tabhint{color:var(--faint);font-size:11px;margin-left:4px}
+.spacer{flex:1}
+#docname{color:var(--dim);font-size:12px}
+#docname b{color:var(--text);font-weight:600}
+#docname .mod{color:var(--command)}
+.ghost{appearance:none;background:transparent;border:1px solid var(--line);border-radius:6px;padding:4px 10px;cursor:pointer;color:var(--dim);display:inline-flex;gap:6px;align-items:center;font-size:12px}
+.ghost:hover{color:var(--text);border-color:var(--faint)}
+
+/* sidebar */
+aside{grid-area:side;overflow:auto;border-right:1px solid var(--line);padding:12px 12px 16px;display:flex;flex-direction:column;gap:16px}
+#palette{display:flex;flex-direction:column;gap:16px}
+.sec h3{font:10px/1 var(--pixel);letter-spacing:.1em;color:var(--dim);margin:0 0 8px;font-weight:400;text-transform:uppercase}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(42px,1fr));gap:4px}
+.tb{appearance:none;border:1px solid transparent;background:var(--raised);border-radius:6px;padding:4px;display:grid;place-items:center;cursor:pointer;aspect-ratio:1;min-width:0}
+.tb:hover{border-color:var(--faint)}
+.tb img{width:32px;height:32px;image-rendering:pixelated;display:block}
+.tb.on{border-color:var(--mode);box-shadow:inset 0 0 0 1px var(--mode);background:var(--raised-2)}
+.stamps{grid-template-columns:1fr 1fr}
+.stamps .tb{aspect-ratio:auto;padding:8px 6px 6px;gap:6px}
+.stamps .tb img{width:auto;height:44px;max-width:100%}
+.stamps .tb span{font-size:11px;color:var(--dim)}
+.stamps .tb.on span{color:var(--text)}
+.attrs{display:flex;flex-direction:column;gap:4px}
+.attrs .tb{aspect-ratio:auto;display:flex;justify-content:flex-start;gap:10px;padding:5px 8px;text-align:left;font-size:12px}
+.attrs .tb img{width:22px;height:22px;border-radius:4px}
+.note{color:var(--dim);font-size:12px;margin:8px 0 0;max-width:60ch}
+.import{width:100%;justify-content:center;margin-top:8px}
+.keys dl{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;margin:0;align-items:center;font-size:12px}
+.keys dt{justify-self:start}
+.keys dd{margin:0;color:var(--dim)}
+
+/* stage */
+#stage{grid-area:stage;position:relative;background:var(--canvas);min-height:0;min-width:0}
+#map{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair;touch-action:none}
+#focusHint{position:absolute;top:12px;left:50%;transform:translateX(-50%);background:var(--raised-2);border:1px solid var(--line);color:var(--text);border-radius:999px;padding:5px 14px;font-size:12px;pointer-events:none;white-space:nowrap}
+#drop{position:absolute;inset:10px;border:2px dashed var(--mode);border-radius:10px;display:grid;place-items:center;background:rgba(9,12,18,.75);font:14px var(--pixel);pointer-events:none}
+
+/* statusline */
+#status{grid-area:status;display:flex;align-items:stretch;gap:0;border-top:1px solid var(--line);background:var(--ground);font-size:12px;min-height:26px;flex-wrap:wrap}
+.mode{font:11px/1 var(--pixel);letter-spacing:.06em;background:var(--mode);color:var(--ink);padding:0 12px;display:flex;align-items:center;min-width:88px;justify-content:center}
+.seg{display:flex;align-items:center;gap:6px;padding:4px 10px;border-right:1px solid var(--line);white-space:nowrap;min-width:0}
+.seg:last-child{border-right:0}
+.seg img{width:16px;height:16px;image-rendering:pixelated}
+.seg.dim{color:var(--dim)}
+#sUnder{color:var(--dim);overflow:hidden;text-overflow:ellipsis;flex:0 1 auto}
+.num{font-variant-numeric:tabular-nums}
+#status .spacer{border-right:1px solid var(--line)}
+#showcmd{color:var(--command);min-width:44px}
+#showcmd:empty{display:none}
+
+#cmdline{grid-area:cmd;position:relative;display:flex;align-items:center;min-height:28px;padding:3px 14px;background:var(--ground);border-top:1px solid var(--line);font-size:12.5px}
+#msg{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#msg.info{color:var(--text)}
+#msg.err{color:var(--erase)}
+#cmdwrap{display:flex;align-items:center;gap:2px;width:100%}
+#cmdwrap span{color:var(--command);font-weight:600}
+#cmd{flex:1;background:transparent;border:0;outline:0;color:var(--text);font:inherit;padding:2px 0;caret-color:var(--command)}
+
+/* command hints: what you can type, shown above the bar while it is open */
+#cmdHints{position:absolute;left:10px;bottom:calc(100% + 6px);width:min(620px,calc(100% - 20px));background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 12px 36px rgba(0,0,0,.35);overflow:hidden;z-index:5}
+#cmdHints ul{list-style:none;margin:0;padding:4px}
+#cmdHints li{display:grid;grid-template-columns:minmax(150px,auto) 1fr;gap:14px;padding:4px 8px;border-radius:5px;align-items:baseline}
+#cmdHints li.top{background:var(--raised-2);box-shadow:inset 2px 0 0 var(--command)}
+#cmdHints code{font:12px var(--mono);color:var(--text);white-space:nowrap}
+#cmdHints code b{color:var(--command);font-weight:600}
+#cmdHints .d{color:var(--dim);font-size:12px}
+#cmdHints .usage{padding:8px 12px 4px;font-size:12px;color:var(--dim)}
+#cmdHints .usage code{font-size:13px}
+#cmdHints .opts{padding:2px 12px 8px;display:flex;flex-wrap:wrap;gap:4px}
+#cmdHints .opts span{font:11px var(--mono);border:1px solid var(--line);border-radius:4px;padding:1px 6px;color:var(--text)}
+#cmdHints .keys{border-top:1px solid var(--line);padding:5px 12px;color:var(--faint);font-size:11px}
+#cmdHints .keys kbd{font-size:10px;padding:1px 4px}
+/* the lesson card */
+#coach{position:absolute;top:12px;right:12px;width:min(360px,calc(100% - 24px));background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--command);border-radius:8px;box-shadow:0 14px 40px rgba(0,0,0,.35);padding:10px 14px 12px;z-index:4}
+.coach-head{display:flex;align-items:center;gap:8px;font:10px/1 var(--pixel);letter-spacing:.08em;color:var(--dim);text-transform:uppercase}
+.coach-title{flex:1}
+.coach-x{appearance:none;border:0;background:transparent;color:var(--dim);font-size:16px;line-height:1;cursor:pointer;padding:0 2px}
+.coach-x:hover{color:var(--text)}
+#coachText{margin:8px 0 10px;font-size:13px;line-height:1.55;color:var(--text)}
+#coachText code{font:12.5px var(--mono);background:var(--raised-2);border:1px solid var(--line);border-radius:4px;padding:0 5px;color:var(--command)}
+#coachText .ok{color:var(--insert);font-weight:600}
+.coach-bar{height:3px;background:var(--raised-2);border-radius:2px;overflow:hidden}
+.coach-bar i{display:block;height:100%;width:0;background:var(--command);transition:width .25s}
+
+/* overlays */
+.overlay{position:fixed;inset:0;background:rgba(5,7,12,.62);display:grid;place-items:start center;padding:9vh 16px 16px;z-index:10;overflow:auto}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;width:min(640px,100%);box-shadow:0 24px 70px rgba(0,0,0,.55);overflow:hidden}
+.card h2{font:13px/1 var(--pixel);letter-spacing:.06em;margin:0;font-weight:400}
+.finder-top{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-bottom:1px solid var(--line)}
+#finderInput{background:var(--ground);border:1px solid var(--line);border-radius:6px;color:var(--text);font:14px var(--mono);padding:8px 10px;outline:0}
+#finderInput:focus{border-color:var(--mode)}
+.hint{color:var(--dim);font-size:11px}
+#finderList{list-style:none;margin:0;padding:6px;max-height:min(420px,55vh);overflow:auto}
+#finderList li{display:flex;align-items:center;gap:10px;padding:5px 8px;border-radius:6px;cursor:pointer}
+#finderList li img{width:32px;height:32px;image-rendering:pixelated;border-radius:3px;flex:none}
+#finderList li .l{flex:1;min-width:0}
+#finderList li .c{color:var(--dim);font-size:11px}
+#finderList li.sel{background:var(--raised-2);box-shadow:inset 2px 0 0 var(--mode)}
+#finderList .empty{color:var(--dim);cursor:default}
+
+.help{width:min(900px,100%)}
+.help-head{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line);gap:12px;flex-wrap:wrap}
+.help-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:18px 26px;padding:16px 18px 20px}
+.help-grid h3{font:10px/1 var(--pixel);letter-spacing:.1em;color:var(--mode);margin:0 0 8px;font-weight:400;text-transform:uppercase}
+.help-grid dl{display:grid;grid-template-columns:auto 1fr;gap:5px 10px;margin:0;font-size:12px;align-items:baseline}
+.help-grid dt{white-space:nowrap}
+.help-grid dd{margin:0;color:var(--dim)}
+
+.export{width:min(820px,100%)}
+.tabs{display:flex;gap:4px;padding:10px 14px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.tabs button{appearance:none;background:transparent;border:1px solid transparent;border-bottom:0;border-radius:6px 6px 0 0;padding:6px 12px;cursor:pointer;color:var(--dim);font-size:12px}
+.tabs button[aria-selected="true"]{background:var(--ground);color:var(--text);border-color:var(--line)}
+.pane{padding:14px;display:flex;flex-direction:column;gap:10px}
+.pane textarea,.pane pre{width:100%;height:320px;background:var(--ground);border:1px solid var(--line);border-radius:6px;color:var(--text);font:12px/1.5 var(--mono);padding:10px;margin:0;resize:vertical;overflow:auto;white-space:pre}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.imgs{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.imgs figure{margin:0;display:flex;flex-direction:column;gap:6px;min-width:0}
+.imgs .frame{background:var(--ground);border:1px solid var(--line);border-radius:6px;padding:8px;overflow:auto;max-height:340px}
+.imgs img{image-rendering:pixelated;display:block}
+.imgs figcaption{color:var(--dim);font-size:11px}
+
+.worldcard{width:min(1280px,100%)}
+.worldbody{display:grid;grid-template-columns:minmax(0,1fr) 280px;height:min(72vh,760px)}
+#worldCanvas{width:100%;height:100%;display:block;background:var(--canvas);cursor:grab}
+#worldSide{border-left:1px solid var(--line);padding:12px 14px;overflow:auto;font-size:12px}
+#worldSide h3{font:10px/1 var(--pixel);letter-spacing:.1em;color:var(--dim);margin:6px 0 8px;font-weight:400;text-transform:uppercase}
+.wlist,.wprob{list-style:none;margin:0 0 14px;padding:0}
+.wlist li{display:flex;justify-content:space-between;gap:8px;padding:4px 8px;border-radius:6px;cursor:pointer}
+.wlist li.sel{background:var(--raised-2);box-shadow:inset 2px 0 0 var(--visual)}
+.wlist .c{color:var(--dim)}
+.wprob li{color:var(--erase);padding:3px 0;border-bottom:1px solid var(--line)}
+@media (max-width:760px){.worldbody{grid-template-columns:1fr;height:auto}#worldCanvas{height:55vh}}
+@media (max-width:760px){
+  body{overflow:auto;height:auto;padding:10px 16px}
+  #app{height:auto;min-height:100%;grid-template-columns:minmax(0,1fr);grid-template-rows:auto 62vh auto auto auto;
+    grid-template-areas:"head" "stage" "status" "cmd" "side"}
+  aside{border-right:0;border-top:1px solid var(--line)}
+  #sUnder{display:none}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div id="app">
+  <header>
+    <div class="brand"><img id="logo" class="px" alt=""><span>Tallgrass</span></div>
+    <nav id="layers" aria-label="Layers"></nav>
+    <div class="spacer"></div>
+    <div id="docname"></div>
+    <button id="tutBtn" class="ghost" type="button">Tutorial</button>
+    <button id="helpBtn" class="ghost" type="button"><kbd>?</kbd> All keys</button>
+  </header>
+
+  <aside id="side" aria-label="Brushes">
+    <div id="palette"></div>
+    <div class="sec keys">
+      <h3>Keys</h3>
+      <dl>
+        <dt><kbd>W A S D</kbd></dt><dd>move, Shift for 4</dd>
+        <dt><kbd>Space</kbd></dt><dd>hold and move to paint</dd>
+        <dt><kbd>X</kbd></dt><dd>hold and move to erase</dd>
+        <dt><kbd>Q</kbd> <kbd>E</kbd></dt><dd>previous / next tile</dd>
+        <dt><kbd>Z</kbd></dt><dd>undo, Shift-Z redo</dd>
+        <dt><kbd>C</kbd></dt><dd>pick the tile under you</dd>
+        <dt><kbd>V</kbd></dt><dd>select an area</dd>
+        <dt><kbd>F</kbd></dt><dd>fill</dd>
+        <dt><kbd>1-4</kbd></dt><dd>layer</dd>
+        <dt><kbd>P</kbd></dt><dd>walk your map</dd>
+        <dt><kbd>Enter</kbd></dt><dd>commands, :w saves</dd>
+      </dl>
+    </div>
+  </aside>
+
+  <main id="stage">
+    <canvas id="map" aria-label="Map canvas"></canvas>
+    <div id="focusHint" hidden>Click the map to use the keyboard</div>
+    <div id="drop" hidden>Drop a tileset PNG or a map JSON</div>
+    <div id="coach" hidden role="status" aria-live="polite">
+      <div class="coach-head"><span class="coach-title">Command bar lesson</span><span id="coachStep"></span><button type="button" id="coachX" class="coach-x" aria-label="End the lesson">×</button></div>
+      <p id="coachText"></p>
+      <div class="coach-bar"><i id="coachFill"></i></div>
+    </div>
+  </main>
+
+  <div id="status">
+    <span id="mode" class="mode">NORMAL</span>
+    <span class="seg" id="sLayer"></span>
+    <span class="seg"><img id="sBrushIcon" alt=""><span id="sBrush"></span></span>
+    <span class="seg" id="sUnder"></span>
+    <span class="spacer"></span>
+    <span class="seg" id="showcmd"></span>
+    <span class="seg num" id="sPos"></span>
+    <span class="seg num" id="sSize"></span>
+    <span class="seg num" id="sZoom"></span>
+  </div>
+  <div id="cmdline">
+    <div id="cmdHints" hidden></div>
+    <span id="msg"></span>
+    <label id="cmdwrap" hidden><span>:</span><input id="cmd" autocomplete="off" spellcheck="false" aria-label="Command"></label>
+  </div>
+</div>
+
+<div id="finder" class="overlay" hidden>
+  <div class="card" role="dialog" aria-label="Find a brush">
+    <div class="finder-top">
+      <input id="finderInput" autocomplete="off" spellcheck="false" placeholder="Find a tile, stamp or collision type">
+      <span class="hint">Enter picks · Esc closes · arrows or Ctrl-n / Ctrl-p move</span>
+    </div>
+    <ul id="finderList"></ul>
+  </div>
+</div>
+
+<div id="help" class="overlay" hidden>
+  <div class="card help" role="dialog" aria-label="Keyboard reference">
+    <div class="help-head"><h2>Tallgrass keys</h2><span class="hint">Keys follow their position, so WASD works on any keyboard layout. Any key closes this.</span></div>
+    <div class="help-grid" id="helpGrid"></div>
+  </div>
+</div>
+
+<div id="export" class="overlay" hidden>
+  <div class="card export" role="dialog" aria-label="Export">
+    <div class="help-head"><h2 id="exTitle">Export</h2><span class="hint" id="exHint"></span></div>
+    <div class="tabs" role="tablist">
+      <button type="button" role="tab" id="tab-json" data-tab="json" aria-selected="true">1 Map data</button>
+      <button type="button" role="tab" id="tab-img" data-tab="img" aria-selected="false">2 Images</button>
+      <button type="button" role="tab" id="tab-code" data-tab="code" aria-selected="false">3 Game code</button>
+    </div>
+    <div class="pane" id="pane-json">
+      <textarea id="exJson" readonly spellcheck="false" aria-label="Map JSON"></textarea>
+      <div class="row"><button class="ghost" type="button" id="copyJson"><kbd>y</kbd> Copy JSON</button><span class="hint" id="exFiles"></span></div>
+    </div>
+    <div class="pane" id="pane-img" hidden>
+      <div class="imgs">
+        <figure><div class="frame"><img id="exMap" alt="Rendered map"></div><figcaption id="exMapCap"></figcaption></figure>
+        <figure><div class="frame"><img id="exAtlas" alt="Tileset atlas"></div><figcaption id="exAtlasCap"></figcaption></figure>
+      </div>
+      <span class="hint">Right-click an image and choose Save Image if the download was blocked.</span>
+    </div>
+    <div class="pane" id="pane-code" hidden>
+      <pre id="exCode"></pre>
+      <div class="row"><button class="ghost" type="button" id="copyCode"><kbd>y</kbd> Copy code</button><span class="hint">Loads the JSON and tileset, draws the layers, checks collision.</span></div>
+    </div>
+  </div>
+</div>
+
+<div id="world" class="overlay" hidden>
+  <div class="card worldcard" role="dialog" aria-label="World">
+    <div class="help-head"><h2>World</h2><span class="hint">WASD pan · + - zoom · = fit · Tab picks a map · Enter opens it · Esc closes</span></div>
+    <div class="worldbody"><canvas id="worldCanvas" aria-label="World map"></canvas><div id="worldSide"></div></div>
+  </div>
+</div>
+
+<input type="file" id="fileTiles" accept="image/png,image/*" hidden>
+<input type="file" id="fileMap" accept="application/json,.json" hidden>
+
+<!-- Sprite packs load here, before the editor: <script src="packs/my-pack.js"></script> -->
+<script>
+"use strict";
+/* ======================================================================
+   Tallgrass: keyboard-first tile map editor
+   ====================================================================== */
+const TILE = 16;
+const LAYERS = ["ground", "objects", "overhead"];
+const ALL = ["ground", "objects", "overhead", "collision"];
+const LNAME = { ground: "Ground", objects: "Objects", overhead: "Overhead", collision: "Collision" };
+const $ = s => document.querySelector(s);
+
+const C = {
+  grass:"#78c858", grass_d:"#50a040", grass_l:"#a8e080",
+  tall:"#409840", tall_d:"#206830", tall_l:"#88d068",
+  path:"#e0c890", path_d:"#b89868", path_s:"#d0b480",
+  sand:"#f0e0a8", sand_d:"#d8c088",
+  water:"#5898e8", water_d:"#3870c8", water_l:"#a8d0f8", foam:"#e0f0ff",
+  leaf:"#40a050", leaf_d:"#206038", leaf_l:"#78c868",
+  trunk:"#906038", trunk_d:"#604028",
+  wood:"#c89058", wood_d:"#805830", wood_l:"#e8b880",
+  rock:"#a8a8b0", rock_d:"#686878", rock_l:"#d8d8e0",
+  cliff:"#b89068", cliff_d:"#806040", cliff_l:"#d8b890",
+  wall:"#f0e8d0", wall_d:"#b0a088", glass:"#88c0f0", glass_l:"#d8f0ff",
+  roof_red:"#d05040", roof_red_d:"#903028", roof_blue:"#4870c8", roof_blue_d:"#284088",
+  roof_green:"#48a068", roof_green_d:"#286840",
+  floor:"#d8a870", floor_d:"#b08050", tile_a:"#ece4d0", tile_b:"#dcd2bc", tile_d:"#b8ac96",
+  red:"#e84848", yellow:"#f8d840", white:"#f8f8f8", pink:"#f080b0", outline:"#282830"
+};
+
+const ATTRS = [
+  ["auto",  "Auto (tile decides)", null,      ""],
+  ["walk",  "Walkable",            "#78dcff", "."],
+  ["block", "Blocked",             "#f04646", "X"],
+  ["grass", "Wild encounter",      "#50e65a", "G"],
+  ["water", "Surf water",          "#468cff", "~"],
+  ["ledge", "Ledge (hop down)",    "#ffaa3c", "v"],
+  ["warp",  "Warp or door",        "#be6eff", "D"],
+  ["spawn", "Player spawn",        "#ffe63c", "S"],
+];
+const ATTR = Object.fromEntries(ATTRS.map(a => [a[0], { key:a[0], label:a[1], color:a[2], glyph:a[3] }]));
+
+const MODES = {
+  normal:  { label:"EDIT",  color:"#6ea8fe" },
+  insert:  { label:"PAINT",  color:"#8ccf5e" },
+  erase:   { label:"ERASE",   color:"#ff7b72" },
+  visual:  { label:"SELECT",  color:"#c29bff" },
+  command: { label:"COMMAND", color:"#f0c152" },
+  play:    { label:"PLAY",    color:"#4fd1c5" },
+};
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ---------------------------------------------------------------- pixels */
+let X = null;
+function mk(w = TILE, h = TILE) { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; }
+function paint(w, h, fn) { const c = mk(w, h), prev = X; X = c.getContext("2d"); fn(); X = prev; return c; }
+function rf(c, x, y, w, h) { X.fillStyle = C[c] || c; X.fillRect(x, y, w, h); }
+function px(c, x, y) { rf(c, x, y, 1, 1); }
+function fill(c) { rf(c, 0, 0, X.canvas.width, X.canvas.height); }
+function circ(c, cx, cy, r) {
+  for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r; x <= cx + r; x++) {
+    const dx = x - cx, dy = y - cy; if (dx * dx + dy * dy <= r * r + r * 0.8) px(c, x, y);
+  }
+}
+function ell(c, x0, y0, w, h) {
+  const cx = x0 + w / 2, cy = y0 + h / 2;
+  for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) {
+    const dx = (x + .5 - cx) / (w / 2), dy = (y + .5 - cy) / (h / 2); if (dx * dx + dy * dy <= 1) px(c, x, y);
+  }
+}
+function edges(m, outer, line, b = 2) {
+  const n = m & 1, e = m & 2, s = m & 4, w = m & 8;
+  if (!n) rf(line, 0, b, 16, 1); if (!s) rf(line, 0, 15 - b, 16, 1);
+  if (!w) rf(line, b, 0, 1, 16); if (!e) rf(line, 15 - b, 0, 1, 16);
+  if (!n) rf(outer, 0, 0, 16, b); if (!s) rf(outer, 0, 16 - b, 16, b);
+  if (!w) rf(outer, 0, 0, b, 16); if (!e) rf(outer, 16 - b, 0, b, 16);
+  if (!n && !w) px(outer, b, b); if (!n && !e) px(outer, 15 - b, b);
+  if (!s && !w) px(outer, b, 15 - b); if (!s && !e) px(outer, 15 - b, 15 - b);
+}
+
+/* ground */
+function dGrass(t = true) {
+  fill("grass");
+  if (t) for (const [x, y] of [[2,3],[9,1],[5,9],[12,6],[1,13],[10,12]]) {
+    px("grass_d", x, y + 1); px("grass_d", x + 1, y); px("grass_d", x + 2, y + 1); px("grass_l", x + 1, y + 1);
+  } else for (const [x, y] of [[3,4],[11,2],[7,10],[13,13],[2,12]]) px("grass_l", x, y);
+}
+function dTall() {
+  fill("tall");
+  for (const [y0, off] of [[0, 0], [8, 2]]) for (let cx = off - 4; cx < 16; cx += 4) {
+    for (let i = 0; i < 7; i++) { px("tall_d", cx, y0 + 1 + i); px("tall_d", cx + 2, y0 + 1 + i); }
+    px("tall_l", cx + 1, y0); px("tall_l", cx + 1, y0 + 1); px("tall_l", cx + 3, y0 + 2);
+  }
+}
+function dPath(m) {
+  fill("path");
+  for (const [x, y] of [[4,5],[11,3],[8,10],[3,12],[12,12]]) { px("path_s", x, y); px("path_s", x + 1, y); }
+  edges(m, "grass", "path_d");
+}
+function dWater(m) {
+  fill("water");
+  for (const [x, y] of [[3,5],[9,10],[11,3]]) { px("water_l", x, y); px("water_l", x + 1, y - 1); px("water_l", x + 2, y - 1); px("water_l", x + 3, y); }
+  px("water_d", 6, 13); px("water_d", 7, 13);
+  edges(m, "sand", "foam");
+}
+function dSand() { fill("sand"); for (const [x, y] of [[2,3],[9,2],[13,8],[5,11],[10,14],[1,8]]) px("sand_d", x, y); }
+function dLedge() {
+  dGrass(false); rf("grass_l", 0, 9, 16, 1); rf("tall_d", 0, 10, 16, 3); rf("grass_d", 0, 13, 16, 1);
+  for (let x = 1; x < 16; x += 4) px("grass_d", x, 12);
+}
+function dCliff() {
+  fill("cliff"); rf("cliff_d", 0, 5, 16, 1); rf("cliff_d", 0, 11, 16, 1); rf("cliff_l", 0, 6, 16, 1); rf("cliff_l", 0, 12, 16, 1);
+  for (const [x, y] of [[4,0],[12,0],[8,6],[2,6],[6,12],[13,12]]) rf("cliff_d", x, y, 1, 5);
+}
+function dBridge() {
+  fill("water"); rf("wood_d", 0, 1, 16, 14);
+  for (const y of [2, 6, 10]) { rf("wood", 0, y, 16, 3); rf("wood_l", 0, y, 16, 1); }
+  for (const x of [3, 12]) { px("wood_d", x, 3); px("wood_d", x, 7); px("wood_d", x, 11); }
+}
+function dFloor() {
+  fill("floor"); for (const y of [3, 7, 11, 15]) rf("floor_d", 0, y, 16, 1);
+  [0, 4, 8, 12].forEach((y, i) => rf("floor_d", i % 2 ? 5 : 11, y, 1, 3));
+}
+function dTileFloor() {
+  for (let y = 0; y < 2; y++) for (let x = 0; x < 2; x++) rf((x + y) % 2 ? "tile_b" : "tile_a", x * 8, y * 8, 8, 8);
+  rf("tile_d", 0, 7, 16, 1); rf("tile_d", 7, 0, 1, 16);
+}
+/* objects */
+function dTree() {
+  circ("leaf_d", 8, 7, 7); circ("leaf", 8, 7, 6); circ("leaf_l", 6, 5, 3);
+  px("leaf_d", 10, 9); px("leaf_d", 4, 9); rf("trunk_d", 6, 12, 4, 4); rf("trunk", 7, 12, 2, 3);
+}
+function dBush() { circ("leaf_d", 8, 10, 6); circ("leaf", 8, 10, 5); circ("leaf_l", 6, 8, 2); }
+function dFlowers(col) {
+  for (const [fx, fy] of [[3,3],[11,5],[5,11],[12,12]]) {
+    px("leaf_d", fx, fy + 2); px("leaf", fx - 1, fy + 2);
+    for (const [dx, dy] of [[0,-1],[1,0],[0,1],[-1,0]]) px(col, fx + dx, fy + dy);
+    px(col === "yellow" ? "white" : "yellow", fx, fy);
+  }
+}
+function dRock() { ell("rock_d", 1, 4, 14, 11); ell("rock", 2, 5, 12, 8); rf("rock_l", 5, 6, 3, 2); }
+function dFence() {
+  for (const x of [1, 12]) { rf("wood_d", x, 3, 3, 12); rf("wood_l", x + 1, 4, 1, 10); }
+  for (const y of [5, 10]) { rf("wood_d", 0, y, 16, 3); rf("wood", 0, y + 1, 16, 1); }
+}
+function dPost() { rf("wood_d", 6, 3, 4, 12); rf("wood_l", 7, 4, 2, 10); }
+function dSign() { rf("wood_d", 7, 9, 2, 7); rf("wood_d", 1, 2, 14, 8); rf("wood", 2, 3, 12, 6); rf("wood_d", 4, 5, 8, 1); rf("wood_d", 4, 7, 6, 1); }
+function dPot() { rf("cliff_d", 4, 9, 8, 6); rf("cliff", 5, 10, 6, 4); circ("leaf", 8, 7, 4); px("pink", 7, 5); px("pink", 9, 7); }
+function dBigTree() {
+  circ("leaf_d", 16, 13, 14); circ("leaf", 16, 13, 12);
+  for (const [cx, cy, r] of [[10,9,4],[19,7,4],[22,15,3],[12,17,3]]) circ("leaf_l", cx, cy, r);
+  rf("trunk_d", 12, 25, 8, 7); rf("trunk", 14, 25, 4, 6); px("trunk_d", 11, 31); px("trunk_d", 20, 31);
+}
+function dHouse(roof, roofd) {
+  rf("outline", 3, 21, 58, 27); rf("wall", 4, 22, 56, 25); rf("wall_d", 4, 44, 56, 3);
+  for (const wx of [9, 43]) {
+    rf("outline", wx, 27, 12, 10); rf("glass", wx + 1, 28, 10, 8); rf("glass_l", wx + 2, 29, 3, 2);
+    rf("outline", wx + 5, 28, 1, 8); rf("outline", wx + 1, 31, 10, 1);
+  }
+  rf("outline", 25, 30, 14, 18); rf("wood", 26, 31, 12, 17); rf("wood_d", 26, 31, 12, 2); rf("wood_d", 31, 33, 1, 14); px("yellow", 35, 40);
+  rf("outline", 45, 0, 8, 10); rf("rock", 46, 1, 6, 9);
+  rf("outline", 0, 4, 64, 19); rf(roof, 1, 5, 62, 16);
+  for (let y = 8; y < 21; y += 4) rf(roofd, 1, y, 62, 1);
+  for (let y = 5; y < 21; y += 4) for (let x = (Math.floor(y / 4) % 2) * 4 + 3; x < 63; x += 8) rf(roofd, x, y, 1, 3);
+  rf(roofd, 1, 20, 62, 2);
+}
+
+/* player sprite (original character) */
+const SPRITE = [
+  "................",
+  "....KKKKKKKK....",
+  "...KHHHHHHHHK...",
+  "..KHHHHHHHHHHK..",
+  "..KHSSSSSSSSHK..",
+  "..KSSESSSSESSK..",
+  "..KSSSSSSSSSSK..",
+  "...KSSSMMSSSK...",
+  "...KKTTTTTTKK...",
+  "..KSTTTWWTTTSK..",
+  "..KSTTTTTTTTSK..",
+  "...KTTTTTTTTK...",
+  "....KBBBBBBK....",
+  "....KBBKKBBK....",
+  "....KKK..KKK....",
+  "................",
+];
+const SPR_COL = { K:"#1c1a28", H:"#4a3050", S:"#f4c89c", E:"#1c1a28", M:"#d89c78", T:"#2fa39a", W:"#e8f4f0", B:"#3a4a7a" };
+function spriteFor(dir) {
+  const rows = SPRITE.slice();
+  if (dir === "up") { rows[4] = "..KHHHHHHHHHHK.."; rows[5] = "..KHHHHHHHHHHK.."; rows[6] = "..KHHHHHHHHHHK.."; rows[7] = "...KHHHHHHHHK..."; rows[9] = "..KSTTTTTTTTSK.."; }
+  if (dir === "left") rows[5] = "..KSESSESSSSSK..";
+  if (dir === "right") rows[5] = "..KSSSSSESSESK..";
+  return paint(16, 16, () => rows.forEach((r, y) => [...r].forEach((ch, x) => { if (SPR_COL[ch]) px(SPR_COL[ch], x, y); })));
+}
+
+/* ---------------------------------------------------------------- registry */
+const TILES = {};           // key -> tile
+const STAMP = {};           // "stamp:x" -> stamp
+const IMPORTS = [];         // imported tilesets
+let MISSING, SPRITES, GRASS_BG;
+
+/* Sprite packs. Classic is built in; more packs load from packs/*.js before
+   this script and register themselves on window.TALLGRASS_PACKS. A map
+   remembers its pack; Classic maps leave the field out, as they always have. */
+const DEFAULT_PACK = "classic";
+const PACKS = {};           // id -> { id, name, ground, palette: [[category, [keys]]], stamps, sprites, text, gen }
+let BUILD = null;           // the pack whose tiles are being registered
+const PK = () => PACKS[state.pack] || PACKS[DEFAULT_PACK];
+const groundFill = () => PK().ground;
+function newPack(def) { const p = { text: {}, ...def, palette: [], stamps: [], iconBg: "grass" }; PACKS[p.id] = p; return p; }
+
+function iconFor(canvas, bg) {
+  const c = mk(32, 32), x = c.getContext("2d"); x.imageSmoothingEnabled = false;
+  if (bg === "grass") x.drawImage(GRASS_BG, 0, 0, 32, 32);
+  else if (bg instanceof HTMLCanvasElement) x.drawImage(bg, 0, 0, 32, 32);
+  else if (bg === "dark") { x.fillStyle = "#212b3f"; x.fillRect(0, 0, 32, 32); }
+  x.drawImage(canvas, 0, 0, 32, 32);
+  return c.toDataURL();
+}
+function attrIcon(a) {
+  const c = mk(32, 32), x = c.getContext("2d");
+  if (!a.color) { x.fillStyle = "#212b3f"; x.fillRect(0, 0, 32, 32); x.strokeStyle = "#7b869d"; x.setLineDash([3, 3]); x.strokeRect(5.5, 5.5, 21, 21); }
+  else { x.fillStyle = a.color; x.fillRect(0, 0, 32, 32); x.fillStyle = "rgba(0,0,0,.72)"; x.font = "bold 18px monospace"; x.textAlign = "center"; x.textBaseline = "middle"; x.fillText(a.glyph, 16, 17); }
+  return c.toDataURL();
+}
+function addTile(key, label, cat, layer, attr, draw, o = {}) {
+  const t = { key, label, cat, layer, attr, auto: !!o.auto, connects: new Set(o.connects || [key]), builtin: true, pack: BUILD.id, iconBg: BUILD.iconBg };
+  if (t.auto) { t.variants = []; for (let m = 0; m < 16; m++) t.variants.push(paint(16, 16, () => draw(m))); t.canvas = t.variants[0]; }
+  else t.canvas = paint(16, 16, draw);
+  TILES[key] = t;
+  if (o.palette !== false) {
+    t.icon = iconFor(t.canvas, layer === "ground" ? null : BUILD.iconBg);
+    const pal = BUILD.palette; let sec = pal.find(p => p[0] === cat); if (!sec) pal.push(sec = [cat, []]); sec[1].push(key);
+  }
+  return t;
+}
+function addStamp(prefix, label, w, h, draw, layerFn, attrFn) {
+  const big = paint(w * 16, h * 16, draw), cells = [], skey = "stamp:" + prefix;
+  for (let ty = 0; ty < h; ty++) {
+    const row = [];
+    for (let tx = 0; tx < w; tx++) {
+      const key = `${prefix}_${tx}_${ty}`, sub = mk();
+      sub.getContext("2d").drawImage(big, tx * 16, ty * 16, 16, 16, 0, 0, 16, 16);
+      const layer = layerFn(tx, ty);
+      TILES[key] = { key, label: `${label} (part)`, cat: "Parts", layer, attr: attrFn(tx, ty), auto: false, connects: new Set([key]), canvas: sub, builtin: true, stamp: skey, pack: BUILD.id };
+      row.push({ key, layer });
+    }
+    cells.push(row);
+  }
+  const ic = mk(w * 16, h * 16), x = ic.getContext("2d");
+  const bg = BUILD.iconBg === "grass" ? GRASS_BG : BUILD.iconBg;
+  for (let ty = 0; ty < h; ty++) for (let tx = 0; tx < w; tx++) x.drawImage(bg, tx * 16, ty * 16);
+  x.drawImage(big, 0, 0);
+  const st = { key: skey, label, w, h, cells, canvas: big, icon: ic.toDataURL(), cat: "Stamps" };
+  BUILD.stamps.push(st); STAMP[skey] = st;
+}
+function buildAssets() {
+  MISSING = paint(16, 16, () => { for (let y = 0; y < 2; y++) for (let x = 0; x < 2; x++) rf((x + y) % 2 ? "#000" : "#f0f", x * 8, y * 8, 8, 8); });
+  GRASS_BG = paint(16, 16, () => dGrass(false));
+  BUILD = newPack({ id: DEFAULT_PACK, name: "Classic", ground: "grass", brush: "grass", gen: {
+    ground: "grass", tall: "tall_grass", path: "path", water: "water", tree: "tree", ledge: "ledge", sign: "sign",
+    houses: ["house_red", "house_blue", "house_green"], houseFlowers: ["flowers_red", "flowers_yellow"],
+    decor: ["flowers_red", "flowers_yellow", "flowers_pink"], props: ["rock", "bush"] } });
+  addTile("grass", "Grass", "Terrain", "ground", "walk", () => dGrass(true));
+  addTile("grass_plain", "Short grass", "Terrain", "ground", "walk", () => dGrass(false));
+  addTile("tall_grass", "Tall grass", "Terrain", "ground", "grass", dTall);
+  addTile("path", "Dirt path", "Terrain", "ground", "walk", dPath, { auto: true });
+  addTile("sand", "Sand", "Terrain", "ground", "walk", dSand);
+  addTile("water", "Water", "Terrain", "ground", "water", dWater, { auto: true, connects: ["water", "bridge"] });
+  addTile("bridge", "Bridge", "Terrain", "ground", "walk", dBridge);
+  addTile("ledge", "Ledge", "Terrain", "ground", "ledge", dLedge);
+  addTile("cliff", "Cliff", "Terrain", "ground", "block", dCliff);
+  addTile("floor_wood", "Wood floor", "Indoors", "ground", "walk", dFloor);
+  addTile("floor_tile", "Tile floor", "Indoors", "ground", "walk", dTileFloor);
+  addTile("tree", "Tree", "Nature", "objects", "block", dTree);
+  addTile("bush", "Bush", "Nature", "objects", "block", dBush);
+  addTile("flowers_red", "Red flowers", "Nature", "objects", null, () => dFlowers("red"));
+  addTile("flowers_yellow", "Yellow flowers", "Nature", "objects", null, () => dFlowers("yellow"));
+  addTile("flowers_pink", "Pink flowers", "Nature", "objects", null, () => dFlowers("pink"));
+  addTile("rock", "Rock", "Nature", "objects", "block", dRock);
+  addTile("fence", "Fence", "Built", "objects", "block", dFence);
+  addTile("fence_post", "Fence post", "Built", "objects", "block", dPost);
+  addTile("sign", "Sign", "Built", "objects", "block", dSign);
+  addTile("flower_pot", "Flower pot", "Built", "objects", "block", dPot);
+  addStamp("big_tree", "Big tree", 2, 2, dBigTree, (x, y) => y === 0 ? "overhead" : "objects", (x, y) => y === 0 ? null : "block");
+  for (const col of ["red", "blue", "green"])
+    addStamp(`house_${col}`, `${col[0].toUpperCase() + col.slice(1)} house`, 4, 3, () => dHouse(C["roof_" + col], C[`roof_${col}_d`]),
+      () => "objects", (x, y) => (y === 2 && (x === 1 || x === 2)) ? "warp" : "block");
+  for (const a of ATTRS) ATTR[a[0]].icon = attrIcon(ATTR[a[0]]);
+  SPRITES = { down: spriteFor("down"), up: spriteFor("up"), left: spriteFor("left"), right: spriteFor("right") };
+  BUILD.sprites = SPRITES;
+  for (const def of window.TALLGRASS_PACKS || []) {
+    try {
+      BUILD = newPack(def);
+      if (def.iconBg) BUILD.iconBg = def.iconBg(PACK_API);
+      def.build(PACK_API);
+      if (def.sprites) BUILD.sprites = def.sprites(PACK_API);
+    } catch (err) { console.error(`Pack ${def.id} failed to load`, err); delete PACKS[def.id]; }
+  }
+  BUILD = null;
+}
+/* What a pack file gets to draw with: the same pixel helpers as the built-in tiles. */
+function pix(rows, pal, ox = 0, oy = 0) { rows.forEach((r, y) => [...r].forEach((ch, x) => { if (pal[ch]) px(pal[ch], ox + x, oy + y); })); }
+const mirror = rows => rows.map(r => [...r].reverse().join(""));
+// Trace a 1px outline around everything drawn so far on the current canvas.
+function outline(c) {
+  const w = X.canvas.width, h = X.canvas.height, d = X.getImageData(0, 0, w, h).data, on = (x, y) => x >= 0 && y >= 0 && x < w && y < h && d[(y * w + x) * 4 + 3] > 0;
+  const edge = []; for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (!on(x, y) && (on(x - 1, y) || on(x + 1, y) || on(x, y - 1) || on(x, y + 1))) edge.push([x, y]);
+  for (const [x, y] of edge) px(c, x, y);
+}
+const PACK_API = { TILE, C, addTile, addStamp, paint, mk, rf, px, fill, circ, ell, edges, pix, mirror, outline };
+
+/* ---------------------------------------------------------------- map */
+const grid = (w, h, v) => Array.from({ length: h }, () => Array(w).fill(v));
+class TMap {
+  constructor(w, h, fillWith = "grass") {
+    this.w = w; this.h = h; this.layers = {};
+    for (const L of LAYERS) this.layers[L] = grid(w, h, L === "ground" ? fillWith : null);
+    this.attrs = grid(w, h, "auto"); this.warps = {}; this.links = []; // edge connections to other maps
+  }
+  inb(x, y) { return x >= 0 && y >= 0 && x < this.w && y < this.h; }
+  g(L) { return L === "collision" ? this.attrs : this.layers[L]; }
+  get(L, x, y) { return this.g(L)[y][x]; }
+  set(L, x, y, v) { this.g(L)[y][x] = v; }
+  resolved(x, y) {
+    const a = this.attrs[y][x]; if (a !== "auto") return a;
+    for (const L of ["objects", "ground"]) { const t = TILES[this.layers[L][y][x]]; if (t && t.attr) return t.attr; }
+    return "walk";
+  }
+  resize(nw, nh) {
+    for (const L of LAYERS) { const o = this.layers[L], f = L === "ground" ? groundFill() : null; this.layers[L] = Array.from({ length: nh }, (_, y) => Array.from({ length: nw }, (_, x) => (y < this.h && x < this.w) ? o[y][x] : f)); }
+    const o = this.attrs; this.attrs = Array.from({ length: nh }, (_, y) => Array.from({ length: nw }, (_, x) => (y < this.h && x < this.w) ? o[y][x] : "auto"));
+    for (const k of Object.keys(this.warps)) { const [x, y] = k.split(",").map(Number); if (x >= nw || y >= nh) delete this.warps[k]; }
+    this.w = nw; this.h = nh;
+  }
+}
+function mask(m, L, x, y, t) {
+  const g = m.layers[L]; let r = 0;
+  for (const [dx, dy, b] of [[0,-1,1],[1,0,2],[0,1,4],[-1,0,8]]) {
+    const nx = x + dx, ny = y + dy;
+    if (nx < 0 || ny < 0 || nx >= m.w || ny >= m.h || t.connects.has(g[ny][nx])) r |= b;
+  }
+  return r;
+}
+function cellCanvas(m, L, x, y) {
+  const k = m.layers[L][y][x]; if (k == null) return null;
+  const t = TILES[k]; if (!t) return MISSING;
+  return t.auto ? t.variants[mask(m, L, x, y, t)] : t.canvas;
+}
+function renderKey(m, L, x, y) {
+  const k = m.layers[L][y][x]; if (k == null) return null;
+  const t = TILES[k]; return t && t.auto ? `${k}#${mask(m, L, x, y, t)}` : k;
+}
+
+/* ---------------------------------------------------------------- generator */
+function rng(seed) { let a = seed >>> 0; return () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function generateRoute(w, h, seed) {
+  const R = rng(seed ?? (Math.random() * 1e9 | 0)), T = PK().gen || PACKS[DEFAULT_PACK].gen;
+  const ri = (a, b) => a + Math.floor(R() * (b - a + 1)), pick = a => a[Math.floor(R() * a.length)];
+  const m = new TMap(w, h, T.ground), G = m.layers.ground, O = m.layers.objects, K = (a, b) => a + "," + b;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (x < 2 || x >= w - 2 || y < 1 || y >= h - 1) O[y][x] = T.border ? T.border[(x * 5 + y * 3) % T.border.length] : T.tree;
+  const path = new Set(); let x = Math.floor(w / 2) - 1;
+  const lay = (xx, y) => { G[y][xx] = T.path; O[y][xx] = null; path.add(K(xx, y)); };
+  for (let y = 0; y < h; y++) {
+    if (y > 2 && y < h - 3 && R() < 0.25) {
+      const nx = Math.max(4, Math.min(w - 6, x + pick([-3, -2, -1, 1, 2, 3])));
+      for (let xx = Math.min(x, nx); xx <= Math.max(x, nx) + 1; xx++) lay(xx, y);
+      x = nx;
+    }
+    lay(x, y); lay(x + 1, y);
+  }
+  const nearPath = (cx, cy, r = 1) => { for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (path.has(K(cx + dx, cy + dy))) return true; return false; };
+  const free = (cx, cy) => cx >= 2 && cx < w - 2 && cy >= 1 && cy < h - 1 && O[cy][cx] === null && G[cy][cx] === T.ground;
+  // a house with its own path to the road
+  for (let tries = 0; tries < 40 && w >= 16 && h >= 12; tries++) {
+    const hx = ri(3, w - 8), hy = ri(2, h - 8); let ok = true;
+    for (let yy = hy - 1; yy <= hy + 4 && ok; yy++) for (let xx = hx - 1; xx <= hx + 4 && ok; xx++) if (!free(xx, yy) || nearPath(xx, yy, 1)) ok = false;
+    if (!ok) continue;
+    const st = STAMP["stamp:" + pick(T.houses)];
+    st.cells.forEach((row, ty) => row.forEach((c, tx) => { m.layers[c.layer][hy + ty][hx + tx] = c.key; }));
+    m.warps[K(hx + 1, hy + 2)] = "house-1 4,7"; m.warps[K(hx + 2, hy + 2)] = "house-1 4,7";
+    const r = hy + 3, xs = [...path].map(s => s.split(",").map(Number)).filter(p => p[1] === r).map(p => p[0]);
+    if (xs.length) {
+      const target = xs.reduce((a, b) => Math.abs(b - hx) < Math.abs(a - hx) ? b : a);
+      for (let xx = Math.min(hx + 1, target); xx <= Math.max(hx + 2, target); xx++) { G[r][xx] = T.path; O[r][xx] = null; path.add(K(xx, r)); }
+    }
+    O[hy + 3][hx] = O[hy + 3][hx] || T.houseFlowers[0]; O[hy + 3][hx + 3] = O[hy + 3][hx + 3] || T.houseFlowers[1];
+    break;
+  }
+  for (let n = ri(3, 5); n > 0; n--) {
+    const pw = ri(3, 7), ph = ri(2, 5), ox = ri(2, Math.max(2, w - 2 - pw)), oy = ri(2, Math.max(2, h - 2 - ph));
+    for (let yy = oy; yy < Math.min(h - 1, oy + ph); yy++) for (let xx = ox; xx < Math.min(w - 2, ox + pw); xx++) if (free(xx, yy)) G[yy][xx] = T.tall;
+  }
+  for (let tries = 0; tries < 40; tries++) {
+    const pw = ri(4, 7), ph = ri(3, 5), ox = ri(3, Math.max(3, w - 3 - pw)), oy = ri(2, Math.max(2, h - 2 - ph));
+    let ok = true;
+    for (let yy = oy; yy < oy + ph && ok; yy++) for (let xx = ox; xx < ox + pw && ok; xx++) if (nearPath(xx, yy, 2) || !(G[yy]?.[xx] === T.ground || G[yy]?.[xx] === T.tall) || (O[yy][xx] && O[yy][xx] !== T.tree)) ok = false;
+    if (!ok) continue;
+    for (let yy = 0; yy < ph; yy++) for (let xx = 0; xx < pw; xx++) {
+      const nx = (xx + .5) / pw * 2 - 1, ny = (yy + .5) / ph * 2 - 1;
+      if (nx * nx + ny * ny <= 1.05) { G[oy + yy][ox + xx] = T.water; O[oy + yy][ox + xx] = null; }
+    }
+    break;
+  }
+  if (R() < 0.75 && h > 10) {
+    const ly = ri(Math.floor(h / 3), Math.floor(2 * h / 3)), xs = [...path].map(s => s.split(",").map(Number)).filter(p => p[1] === ly).map(p => p[0]);
+    if (xs.length) {
+      const lo = Math.min(...xs), hi = Math.max(...xs), okL = xx => (G[ly][xx] === T.ground || G[ly][xx] === T.tall) && O[ly][xx] === null;
+      for (let xx = 2; xx < lo - 1; xx++) if (okL(xx)) G[ly][xx] = T.ledge;
+      for (let xx = hi + 2; xx < w - 2; xx++) if (okL(xx)) G[ly][xx] = T.ledge;
+    }
+  }
+  if (T.farm) placeFarm(m, T.farm, R, free, nearPath);
+  for (let yy = 1; yy < h - 1; yy++) for (let xx = 2; xx < w - 2; xx++) {
+    if (!free(xx, yy) || nearPath(xx, yy)) continue;
+    const r = R(), d = T.density || 1;
+    if (r < .035 * d) O[yy][xx] = T.tree;
+    else if (r < .07 * d) O[yy][xx] = pick(T.decor);
+    else if (r < .08 * d) O[yy][xx] = pick(T.props);
+  }
+  const row3 = [...path].map(s => s.split(",").map(Number)).filter(p => p[1] === 3).map(p => p[0]);
+  if (row3.length) { const sx = Math.min(...row3) - 1; if (sx >= 2 && sx < w - 2) { O[3][sx] = T.sign; G[3][sx] = T.ground; } }
+  const bottom = [...path].map(s => s.split(",").map(Number)).filter(p => p[1] === h - 2).map(p => p[0]);
+  if (bottom.length) m.attrs[h - 2][Math.min(...bottom)] = "spawn";
+  return m;
+}
+
+// A packed farm plot: tilled soil with rows of crops at mixed growth stages.
+function placeFarm(m, farm, R, free, nearPath) {
+  const G = m.layers.ground, O = m.layers.objects, ri = (a, b) => a + Math.floor(R() * (b - a + 1));
+  for (let tries = 0; tries < 60; tries++) {
+    const fw = ri(4, 6), fh = ri(3, 4), fx = ri(2, Math.max(2, m.w - 2 - fw)), fy = ri(2, Math.max(2, m.h - 2 - fh));
+    let ok = true;
+    for (let y = fy - 1; y <= fy + fh && ok; y++) for (let x = fx - 1; x <= fx + fw && ok; x++) if (!free(x, y) || nearPath(x, y, 0)) ok = false;
+    if (!ok) continue;
+    for (let y = fy; y < fy + fh; y++) {
+      const crop = farm.crops[(y - fy) % farm.crops.length];
+      for (let x = fx; x < fx + fw; x++) { G[y][x] = farm.soil; O[y][x] = crop[ri(0, crop.length - 1)]; }
+    }
+    if (farm.props) for (const [i, k] of farm.props.entries()) if (free(fx + fw, fy + i)) O[fy + i][fx + fw] = k;
+    return;
+  }
+}
+
+/* ---------------------------------------------------------------- state */
+const state = {
+  map: null, name: "route-1", pack: DEFAULT_PACK, cx: 0, cy: 0, zoom: 3, cam: { x: 0, y: 0 },
+  mode: "normal", layer: "ground", brush: "grass", prevBrush: "tall_grass", attrBrush: "block", prevAttr: "walk",
+  anchor: null, grid: true, showAttrs: false, yank: null, dirty: false,
+  undo: [], redo: [], stroke: null, play: null, flashUntil: 0, fadeStart: 0, returns: new Map(),
+};
+let count = "", pending = "", paletteSig = null, msgTimer = 0;
+const held = [];
+
+/* ---------------------------------------------------------------- host
+   Every storage and file call goes through `host`. The native Omarchy shell
+   answers over a WebKit message handler; a plain browser falls back to
+   localStorage and downloads, so this file still runs on its own.          */
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); return true; } catch { return false; } },
+};
+function library() { try { return JSON.parse(store.get("tallgrass.maps") || "{}") || {}; } catch { return {}; } }
+const browserHost = {
+  native: false, where: "in this browser", job: null,
+  async listMaps() { return Object.keys(library()); },
+  async readMap(name) { return library()[name] || null; },
+  async writeMap(name, data) { const lib = library(); lib[name] = data; if (!store.set("tallgrass.maps", JSON.stringify(lib))) throw new Error("This browser blocked saving. Use :export to keep a copy of the map."); return { where: "in this browser" }; },
+  async removeMap(name) { const lib = library(); if (!lib[name]) return false; delete lib[name]; store.set("tallgrass.maps", JSON.stringify(lib)); return true; },
+  async getSession(k) { return store.get("tallgrass." + k); },
+  async setSession(k, v) { return store.set("tallgrass." + k, v); },
+  async exportFiles(name, files) {
+    offer(`${name}.json`, new Blob([files.json], { type: "application/json" }));
+    const [a, b] = await Promise.all([toBlob(files.atlas), toBlob(files.map)]);
+    if (a) offer(`${name}-tiles.png`, a); if (b) offer(`${name}.png`, b);
+    return { where: "your downloads" };
+  },
+  async resolveExport() { return { dir: null, where: "your downloads" }; },
+  async exportText(dest, name, text) { offer(name, new Blob([text], { type: "application/json" })); return true; },
+  async pick(kind) { $(kind === "tileset" ? "#fileTiles" : "#fileMap").click(); return null; },
+  async copy(text) { await navigator.clipboard.writeText(text); },
+  async quit() { msg("Nothing to quit in the browser. Your work autosaves here, and :w keeps a named copy."); return false; },
+};
+function nativeHost(cfg) {
+  const port = window.webkit.messageHandlers.tallgrass;
+  const call = async (op, args = {}) => {
+    const r = JSON.parse(await port.postMessage(JSON.stringify({ op, ...args })));
+    if (r.error) throw new Error(r.error); return r.value;
+  };
+  return {
+    native: true, where: cfg.mapsDir, job: cfg.job || null, openPath: cfg.openPath || null,
+    listMaps: () => call("listMaps"),
+    readMap: (name) => call("readMap", { name }),
+    writeMap: (name, data) => call("writeMap", { name, text: fmtJSON(data) + "\n" }),
+    removeMap: (name) => call("removeMap", { name }),
+    getSession: (key) => call("getSession", { key }),
+    setSession: (key, text) => call("setSession", { key, text }),
+    exportFiles: (name, files, dest) => call("exportFiles", { name, dest, json: files.json + "\n", atlas: files.atlas.toDataURL(), map: files.map.toDataURL() }),
+    resolveExport: (key, dest) => call("resolveExport", { key, dest }),
+    exportText: (dest, name, text) => call("exportText", { dest, name, text }),
+    pick: (kind) => call("pick", { kind }),
+    copy: (text) => call("copy", { text }),
+    quit: () => call("quit"),
+  };
+}
+const host = window.TALLGRASS_HOST && window.webkit?.messageHandlers?.tallgrass ? nativeHost(window.TALLGRASS_HOST) : browserHost;
+let mapNames = [];
+async function refreshMapNames() { try { mapNames = await host.listMaps(); } catch { mapNames = []; } return mapNames; }
+
+/* ---------------------------------------------------------------- theme
+   The shell hands over CSS variables from the Omarchy theme. Canvas colors
+   and mode colors are read back from the variables so both stay in sync.   */
+const CANVAS = { bg: "#090c12", backing: "#1a2233", border: "rgba(123,134,157,.6)" };
+function luminance(hex) { const m = /^#?([0-9a-f]{6})$/i.exec((hex || "").trim()); if (!m) return 0; const n = parseInt(m[1], 16); return (0.299 * (n >> 16) + 0.587 * (n >> 8 & 255) + 0.114 * (n & 255)) / 255; }
+window.tallgrassTheme = function (theme) {
+  const root = document.documentElement, css = getComputedStyle(root);
+  for (const [k, v] of Object.entries(theme.vars || {})) root.style.setProperty(k, v);
+  if (theme.scheme) root.style.setProperty("color-scheme", theme.scheme);
+  const read = k => css.getPropertyValue(k).trim();
+  const inks = theme.inks || null;
+  for (const [md, v] of [["normal", "--normal"], ["insert", "--insert"], ["erase", "--erase"], ["visual", "--visual"], ["command", "--command"], ["play", "--play"]]) {
+    MODES[md].color = read(v) || MODES[md].color;
+    MODES[md].ink = inks ? (luminance(MODES[md].color) > 0.55 ? inks.dark : inks.light) : null;
+  }
+  CANVAS.bg = read("--canvas") || CANVAS.bg; CANVAS.backing = read("--raised") || CANVAS.backing; CANVAS.border = read("--faint") || CANVAS.border;
+  if (state.map) refreshUI();
+};
+if (window.TALLGRASS_HOST?.theme) window.tallgrassTheme(window.TALLGRASS_HOST.theme);
+
+/* ---------------------------------------------------------------- editing */
+function begin() { if (!state.stroke) state.stroke = new Map(); }
+function put(L, x, y, v) {
+  const m = state.map; if (!m.inb(x, y)) return;
+  const old = m.get(L, x, y); if (old === v) return;
+  begin();
+  const k = `${L},${x},${y}`;
+  if (state.stroke.has(k)) state.stroke.get(k)[1] = v; else state.stroke.set(k, [old, v]);
+  m.set(L, x, y, v);
+}
+function commit() {
+  if (state.stroke && state.stroke.size) { state.undo.push({ type: "cells", ch: state.stroke }); if (state.undo.length > 500) state.undo.shift(); state.redo = []; markDirty(); }
+  state.stroke = null;
+}
+function snap() { const m = state.map; return { name: state.name, pack: state.pack, w: m.w, h: m.h, layers: JSON.parse(JSON.stringify(m.layers)), attrs: m.attrs.map(r => r.slice()), warps: { ...m.warps }, links: m.links.map(l => ({ ...l })) }; }
+function restore(s) { const m = new TMap(s.w, s.h, null); m.layers = JSON.parse(JSON.stringify(s.layers)); m.attrs = s.attrs.map(r => r.slice()); m.warps = { ...s.warps }; m.links = (s.links || []).map(l => ({ ...l })); state.map = m; state.name = s.name; state.pack = s.pack || DEFAULT_PACK; clampCursor(); clampCam(); }
+function snapshotOp(fn) { commit(); const before = snap(); fn(); state.undo.push({ type: "snap", before, after: snap() }); state.redo = []; markDirty(); }
+function undo(redo = false) {
+  commit();
+  const src = redo ? state.redo : state.undo, dst = redo ? state.undo : state.redo;
+  const op = src.pop(); if (!op) return msg(redo ? "Already at newest change" : "Already at oldest change");
+  if (op.type === "cells") { for (const [k, [o, n]] of op.ch) { const [L, x, y] = k.split(","); if (state.map.inb(+x, +y)) state.map.set(L, +x, +y, redo ? n : o); } }
+  else restore(redo ? op.after : op.before);
+  dst.push(op); markDirty(); msg(redo ? "Redo" : "Undo");
+}
+function markDirty() { state.dirty = true; scheduleSave(); }
+let saveT = 0;
+function saveSession() { clearTimeout(saveT); saveT = 0; if (host.job) return Promise.resolve(false); return host.setSession("session", JSON.stringify({ name: state.name, dirty: state.dirty, map: lightData() })).catch(() => false); }
+function scheduleSave() { clearTimeout(saveT); saveT = setTimeout(saveSession, 500); }
+window.tallgrassFlush = () => saveT ? saveSession().then(() => true) : Promise.resolve(true);
+window.addEventListener("pagehide", () => { if (saveT) saveSession(); });
+
+function targetLayerFor(key) { const t = TILES[key]; if (!t) return "ground"; return t.layer || (state.layer === "collision" ? "ground" : state.layer); }
+function paintAt(x, y) {
+  if (!state.map.inb(x, y)) return;
+  if (state.layer === "collision") return put("collision", x, y, state.attrBrush);
+  const b = state.brush;
+  if (STAMP[b]) return placeStamp(STAMP[b], x, y);
+  if (TILES[b]) put(targetLayerFor(b), x, y, b);
+}
+function eraseAt(x, y) {
+  const L = state.layer;
+  put(L, x, y, L === "collision" ? "auto" : L === "ground" ? groundFill() : null);
+}
+function placeStamp(st, x, y) { st.cells.forEach((row, ty) => row.forEach((c, tx) => put(c.layer, x + tx, y + ty, c.key))); }
+function flood() {
+  const m = state.map; let L, v;
+  if (state.layer === "collision") { L = "collision"; v = state.attrBrush; }
+  else { if (STAMP[state.brush]) return msg("Fill works with single tiles. For stamps, select an area with V and press F.", "err"); L = targetLayerFor(state.brush); v = state.brush; }
+  const g = m.g(L), target = g[state.cy][state.cx]; if (target === v) return msg("Already filled");
+  const q = [[state.cx, state.cy]], seen = new Set([state.cx + "," + state.cy]); let n = 0;
+  while (q.length) {
+    const [x, y] = q.shift(); put(L, x, y, v); n++;
+    for (const [nx, ny] of [[x+1,y],[x-1,y],[x,y+1],[x,y-1]]) { const k = nx + "," + ny; if (!seen.has(k) && m.inb(nx, ny) && g[ny][nx] === target) { seen.add(k); q.push([nx, ny]); } }
+  }
+  commit(); msg(`Filled ${n} cells on ${LNAME[L]}`);
+}
+function rectOf() { const a = state.anchor; return { x0: Math.min(a.x, state.cx), y0: Math.min(a.y, state.cy), x1: Math.max(a.x, state.cx), y1: Math.max(a.y, state.cy) }; }
+function fillRect(r) {
+  if (state.layer === "collision") { for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) put("collision", x, y, state.attrBrush); }
+  else if (STAMP[state.brush]) {
+    const st = STAMP[state.brush]; let placed = 0;
+    for (let y = r.y0; y + st.h - 1 <= r.y1; y += st.h) for (let x = r.x0; x + st.w - 1 <= r.x1; x += st.w) { placeStamp(st, x, y); placed++; }
+    if (!placed) placeStamp(st, r.x0, r.y0);
+  } else { const L = targetLayerFor(state.brush); for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) put(L, x, y, state.brush); }
+  commit();
+}
+function clearRect(r) { for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) eraseAt(x, y); commit(); }
+function yankRect(r) {
+  const m = state.map, w = r.x1 - r.x0 + 1, h = r.y1 - r.y0 + 1, cut = g => g.slice(r.y0, r.y1 + 1).map(row => row.slice(r.x0, r.x1 + 1));
+  state.yank = { w, h, layers: Object.fromEntries(LAYERS.map(L => [L, cut(m.layers[L])])), attrs: cut(m.attrs) };
+  msg(`Copied ${w}x${h}. Ctrl-V pastes at the cursor.`);
+}
+function paste() {
+  const y = state.yank; if (!y) return msg("Nothing copied yet. Select with V, then press C.", "err");
+  for (let yy = 0; yy < y.h; yy++) for (let xx = 0; xx < y.w; xx++) {
+    for (const L of LAYERS) put(L, state.cx + xx, state.cy + yy, y.layers[L][yy][xx]);
+    put("collision", state.cx + xx, state.cy + yy, y.attrs[yy][xx]);
+  }
+  commit(); msg(`Pasted ${y.w}x${y.h}`);
+}
+function eyedrop() {
+  const m = state.map, x = state.cx, y = state.cy;
+  if (state.layer === "collision") { selectAttr(m.resolved(x, y)); return msg(`Brush: ${ATTR[state.attrBrush].label}`); }
+  for (const L of ["overhead", "objects", "ground"]) {
+    const k = m.layers[L][y][x]; if (!k) continue;
+    const t = TILES[k]; selectBrush(t && t.stamp ? t.stamp : k); return msg(`Brush: ${brushLabel(state.brush)}`);
+  }
+}
+
+/* ---------------------------------------------------------------- brushes */
+function brushList() { const P = PK(); return [...P.palette.flatMap(p => p[1]), ...P.stamps.map(s => s.key), ...IMPORTS.flatMap(i => i.keys)]; }
+function brushLabel(k) { return STAMP[k] ? STAMP[k].label : TILES[k] ? TILES[k].label : k; }
+function brushIcon(k) {
+  if (STAMP[k]) return STAMP[k].icon; const t = TILES[k]; if (!t) return "";
+  if (!t.icon) t.icon = iconFor(t.canvas, t.imported ? "dark" : t.layer === "ground" ? null : t.iconBg || "grass");
+  return t.icon;
+}
+function selectBrush(k) {
+  if (!TILES[k] && !STAMP[k]) return;
+  if (k !== state.brush) { state.prevBrush = state.brush; state.brush = k; }
+  if (STAMP[k]) state.layer = "objects";
+  else if (TILES[k].layer) state.layer = TILES[k].layer;
+  else if (state.layer === "collision") state.layer = "ground";
+}
+function selectAttr(a) { if (!ATTR[a]) return; if (a !== state.attrBrush) { state.prevAttr = state.attrBrush; state.attrBrush = a; } state.layer = "collision"; }
+function cycleBrush(d) {
+  if (state.layer === "collision") { const ks = ATTRS.map(a => a[0]); const i = ks.indexOf(state.attrBrush); selectAttr(ks[(i + d + ks.length) % ks.length]); return; }
+  const list = brushList(); const i = list.indexOf(state.brush); selectBrush(list[((i < 0 ? 0 : i + d) + list.length) % list.length]);
+}
+function altBrush() { if (state.layer === "collision") selectAttr(state.prevAttr); else selectBrush(state.prevBrush); msg(`Brush: ${state.layer === "collision" ? ATTR[state.attrBrush].label : brushLabel(state.brush)}`); }
+
+/* ---------------------------------------------------------------- camera & cursor */
+const cv = $("#map"); let ctx = cv.getContext("2d"), dpr = 1;
+function viewSize() { return [cv.clientWidth || 1, cv.clientHeight || 1]; }
+const viewMap = () => state.play ? state.play.map : state.map;
+function clampCam() {
+  const [W, H] = viewSize(), ts = TILE * state.zoom, m = viewMap(); if (!m) return;
+  const mw = m.w * ts, mh = m.h * ts, pad = m.links.length ? Math.max(W, H) : ts * 2; // room to see connected neighbors
+  state.cam.x = Math.round(mw + pad * 2 <= W ? -(W - mw) / 2 : Math.max(-pad, Math.min(mw - W + pad, state.cam.x)));
+  state.cam.y = Math.round(mh + pad * 2 <= H ? -(H - mh) / 2 : Math.max(-pad, Math.min(mh - H + pad, state.cam.y)));
+}
+function follow() {
+  const [W, H] = viewSize(), ts = TILE * state.zoom;
+  const sx = Math.max(0, Math.min(ts * 3, (W - ts) / 2)), sy = Math.max(0, Math.min(ts * 3, (H - ts) / 2));
+  const px = state.cx * ts, py = state.cy * ts;
+  if (px - state.cam.x < sx) state.cam.x = px - sx; if (px + ts - state.cam.x > W - sx) state.cam.x = px + ts - W + sx;
+  if (py - state.cam.y < sy) state.cam.y = py - sy; if (py + ts - state.cam.y > H - sy) state.cam.y = py + ts - H + sy;
+  clampCam();
+}
+function centerOn(x, y) { const [W, H] = viewSize(), ts = TILE * state.zoom; state.cam.x = x * ts + ts / 2 - W / 2; state.cam.y = y * ts + ts / 2 - H / 2; clampCam(); }
+function clampCursor() { state.cx = Math.max(0, Math.min(state.map.w - 1, state.cx)); state.cy = Math.max(0, Math.min(state.map.h - 1, state.cy)); }
+function step() { if (state.mode === "insert") paintAt(state.cx, state.cy); else if (state.mode === "erase") eraseAt(state.cx, state.cy); }
+function moveBy(dx, dy, n) {
+  for (let i = 0; i < n; i++) {
+    const nx = Math.max(0, Math.min(state.map.w - 1, state.cx + dx)), ny = Math.max(0, Math.min(state.map.h - 1, state.cy + dy));
+    if (nx === state.cx && ny === state.cy) break;
+    state.cx = nx; state.cy = ny; step();
+  }
+  follow();
+}
+function moveTo(x, y) { state.cx = x; state.cy = y; clampCursor(); follow(); }
+function setZoom(z, ax, ay) {
+  z = Math.max(1, Math.min(8, z)); if (z === state.zoom) return;
+  const [W, H] = viewSize(); ax ??= W / 2; ay ??= H / 2;
+  const o = TILE * state.zoom, n = TILE * z, wx = (ax + state.cam.x) / o, wy = (ay + state.cam.y) / o;
+  state.zoom = z; state.cam.x = Math.round(wx * n - ax); state.cam.y = Math.round(wy * n - ay); clampCam();
+}
+function setMode(md) { if ((state.mode === "insert" || state.mode === "erase") && md !== state.mode) commit(); state.mode = md; if (md !== "visual") state.anchor = null; }
+
+/* ---------------------------------------------------------------- render */
+function resizeCanvas() {
+  dpr = window.devicePixelRatio || 1;
+  const [W, H] = viewSize(); cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  ctx = cv.getContext("2d"); clampCam();
+}
+// Connected maps drawn past the edges: faded while editing, solid while walking.
+function drawNeighbors(m, ox, oy, ts, editing) {
+  for (const L of m.links) {
+    const e = neighborEntry(L.map); if (!e) continue;
+    const n = e.map, [nx, ny] = linkOrigin(m, L, n), c = e.canvas ||= renderMap(n), x = ox + nx * ts, y = oy + ny * ts;
+    ctx.globalAlpha = editing ? .42 : 1; ctx.drawImage(c, x, y, n.w * ts, n.h * ts); ctx.globalAlpha = 1;
+    if (!editing) continue;
+    ctx.strokeStyle = MODES.normal.color; ctx.lineWidth = 1; ctx.setLineDash([4, 4]); ctx.strokeRect(x + .5, y + .5, n.w * ts - 1, n.h * ts - 1); ctx.setLineDash([]);
+    const label = `${L.map}  ${L.dir}${L.offset ? ` ${L.offset > 0 ? "+" : ""}${L.offset}` : ""}`;
+    ctx.font = "12px " + getComputedStyle(document.documentElement).getPropertyValue("--mono"); ctx.textBaseline = "middle";
+    const lx = L.dir === "north" || L.dir === "south" ? Math.max(ox, x) + 8 : x + 8, ly = L.dir === "north" ? oy - 14 : L.dir === "south" ? oy + m.h * ts + 14 : Math.max(oy, y) + 14;
+    const tw = ctx.measureText(label).width, [VW, VH] = viewSize(), cx = Math.max(8, Math.min(VW - tw - 12, lx)), cy = Math.max(14, Math.min(VH - 14, ly)); // keep it on screen
+    ctx.fillStyle = "rgba(0,0,0,.6)"; ctx.fillRect(cx - 5, cy - 9, tw + 10, 18); ctx.fillStyle = "#fff"; ctx.fillText(label, cx, cy);
+  }
+}
+function render(now) {
+  const m = viewMap(); if (!m) return;
+  const [W, H] = viewSize(), ts = TILE * state.zoom, cam = state.cam, p = state.play;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.imageSmoothingEnabled = false; ctx.globalAlpha = 1;
+  ctx.fillStyle = CANVAS.bg; ctx.fillRect(0, 0, W, H);
+  const ox = -cam.x, oy = -cam.y;
+  const x0 = Math.max(0, Math.floor(cam.x / ts)), y0 = Math.max(0, Math.floor(cam.y / ts));
+  const x1 = Math.min(m.w, Math.ceil((cam.x + W) / ts)), y1 = Math.min(m.h, Math.ceil((cam.y + H) / ts));
+  drawNeighbors(m, ox, oy, ts, !p);
+  ctx.fillStyle = "rgba(0,0,0,.45)"; if (!m.links.length || !p) ctx.fillRect(ox + 6, oy + 6, m.w * ts, m.h * ts);
+  ctx.fillStyle = CANVAS.backing; ctx.fillRect(ox, oy, m.w * ts, m.h * ts);
+  const drawLayer = (L, alpha) => {
+    ctx.globalAlpha = alpha;
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { const c = cellCanvas(m, L, x, y); if (c) ctx.drawImage(c, ox + x * ts, oy + y * ts, ts, ts); }
+    ctx.globalAlpha = 1;
+  };
+  drawLayer("ground", 1); drawLayer("objects", 1);
+  if (p) drawPlayer(p, now, ox, oy, ts);
+  drawLayer("overhead", !p && (state.layer === "ground" || state.layer === "objects") ? 0.5 : 1);
+
+  if (!p && (state.showAttrs || state.layer === "collision")) {
+    const glyph = ts >= 32; ctx.font = `${Math.floor(ts * .42)}px Silkscreen, monospace`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+      const a = m.attrs[y][x], r = a !== "auto" ? a : m.resolved(x, y), col = ATTR[r].color;
+      if (!col || (a === "auto" && r === "walk")) continue;
+      const sx = ox + x * ts, sy = oy + y * ts;
+      ctx.globalAlpha = a !== "auto" ? .55 : .3; ctx.fillStyle = col; ctx.fillRect(sx, sy, ts, ts);
+      ctx.globalAlpha = 1;
+      if (a !== "auto") { ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.strokeRect(sx + .5, sy + .5, ts - 1, ts - 1); }
+      if (glyph) { ctx.fillStyle = a !== "auto" ? "#fff" : "rgba(255,255,255,.75)"; ctx.fillText(ATTR[r].glyph, sx + ts / 2, sy + ts / 2 + 1); }
+    }
+  }
+  if (!p && state.grid && ts >= 16) {
+    ctx.strokeStyle = "rgba(0,0,0,.2)"; ctx.lineWidth = 1; ctx.beginPath();
+    for (let x = x0; x <= x1; x++) { ctx.moveTo(ox + x * ts + .5, oy + y0 * ts); ctx.lineTo(ox + x * ts + .5, oy + y1 * ts); }
+    for (let y = y0; y <= y1; y++) { ctx.moveTo(ox + x0 * ts, oy + y * ts + .5); ctx.lineTo(ox + x1 * ts, oy + y * ts + .5); }
+    ctx.stroke();
+  }
+  if (!p) { ctx.strokeStyle = CANVAS.border; ctx.lineWidth = 1; ctx.strokeRect(ox - .5, oy - .5, m.w * ts + 1, m.h * ts + 1); }
+
+  const mc = MODES[p ? "play" : state.mode].color;
+  if (!p) {
+    if (state.mode === "visual" && state.anchor) {
+      const r = rectOf(), rx = ox + r.x0 * ts, ry = oy + r.y0 * ts, rw = (r.x1 - r.x0 + 1) * ts, rh = (r.y1 - r.y0 + 1) * ts;
+      ctx.globalAlpha = .22; ctx.fillStyle = mc; ctx.fillRect(rx, ry, rw, rh); ctx.globalAlpha = 1;
+      ctx.strokeStyle = mc; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.strokeRect(rx + 1, ry + 1, rw - 2, rh - 2); ctx.setLineDash([]);
+    }
+    const sx = ox + state.cx * ts, sy = oy + state.cy * ts;
+    if (state.mode === "normal" || state.mode === "insert") {
+      ctx.globalAlpha = .55;
+      if (state.layer === "collision") { const col = ATTR[state.attrBrush].color; if (col) { ctx.fillStyle = col; ctx.fillRect(sx, sy, ts, ts); } }
+      else if (STAMP[state.brush]) { const st = STAMP[state.brush]; ctx.drawImage(st.canvas, sx, sy, st.w * ts, st.h * ts); }
+      else if (TILES[state.brush]) ctx.drawImage(TILES[state.brush].canvas, sx, sy, ts, ts);
+      ctx.globalAlpha = 1;
+    }
+    let cw = ts, ch = ts;
+    if (STAMP[state.brush] && state.layer !== "collision" && (state.mode === "normal" || state.mode === "insert")) { cw = STAMP[state.brush].w * ts; ch = STAMP[state.brush].h * ts; }
+    ctx.strokeStyle = "rgba(0,0,0,.6)"; ctx.lineWidth = 4; ctx.strokeRect(sx, sy, cw, ch);
+    ctx.strokeStyle = mc; ctx.lineWidth = 2; ctx.strokeRect(sx, sy, cw, ch);
+  }
+  if (now - state.fadeStart < 260) { ctx.fillStyle = `rgba(0,0,0,${1 - (now - state.fadeStart) / 260})`; ctx.fillRect(0, 0, W, H); } // door fade-in
+  if (now < state.flashUntil) {
+    const k = Math.floor((state.flashUntil - now) / 90) % 2;
+    ctx.fillStyle = k ? "rgba(255,255,255,.75)" : "rgba(10,10,20,.55)"; ctx.fillRect(0, 0, W, H);
+  }
+}
+function drawPlayer(p, now, ox, oy, ts) {
+  const t = Math.min(1, (now - p.start) / p.dur), fx = p.fx + (p.x - p.fx) * t, fy = p.fy + (p.y - p.fy) * t;
+  const lift = p.hop ? Math.sin(Math.PI * t) * ts * .45 : (t < 1 ? Math.sin(Math.PI * t) * ts * .06 : 0);
+  ctx.fillStyle = "rgba(0,0,0,.25)"; ctx.beginPath(); ctx.ellipse(ox + fx * ts + ts / 2, oy + fy * ts + ts * .9, ts * .32, ts * .1, 0, 0, Math.PI * 2); ctx.fill();
+  const fr = (PK().sprites || SPRITES)[p.dir], img = !Array.isArray(fr) ? fr : t < 1 ? fr[1 + p.steps % 2] : fr[0];
+  ctx.drawImage(img, ox + fx * ts, oy + fy * ts - lift - ts * .12, ts, ts);
+}
+
+/* ---------------------------------------------------------------- play mode */
+function startPlay() {
+  const m = state.map; let sx = state.cx, sy = state.cy;
+  outer: for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) if (m.attrs[y][x] === "spawn") { sx = x; sy = y; break outer; }
+  const r = m.resolved(sx, sy);
+  if (r === "block" || r === "water") return msg("The start cell is blocked. Paint a Player spawn on the Collision layer, or move the cursor to open ground.", "err");
+  setMode("normal");
+  state.play = { map: m, name: state.name, x: sx, y: sy, fx: sx, fy: sy, dir: "down", start: 0, dur: 1, hop: false, done: true, steps: 0, found: 0, maps: new Set([state.name]) };
+  held.length = 0; centerOn(sx, sy);
+  msg("Walking the map. WASD or arrows to move, Esc to go back to editing.", "info");
+}
+function stopPlay() {
+  const p = state.play; if (!p) return;
+  state.play = null; held.length = 0;
+  const trip = p.maps.size > 1 ? ` Visited ${[...p.maps].join(", ")}.` : "";
+  if (p.map === state.map) { state.cx = p.x; state.cy = p.y; follow(); msg(`Back to editing. ${p.steps} steps, ${p.found} encounters.${trip} Cursor is where you stopped.`); }
+  else { follow(); msg(`Back to editing ${state.name}. You stopped in ${p.name} at ${p.x},${p.y}.${trip}`); }
+}
+function tryStep(dx, dy, now) {
+  const p = state.play, m = p.map; if (p.loading) return;
+  p.dir = dx < 0 ? "left" : dx > 0 ? "right" : dy < 0 ? "up" : "down";
+  const nx = p.x + dx, ny = p.y + dy; if (!m.inb(nx, ny)) return crossEdge(dx, dy, now);
+  const a = m.resolved(nx, ny);
+  if (a === "block" || a === "water") return;
+  if (a === "ledge") {
+    if (dy !== 1 || !m.inb(nx, ny + 1)) return;
+    const b = m.resolved(nx, ny + 1); if (b === "block" || b === "water" || b === "ledge") return;
+    return go(nx, ny + 1, true, now);
+  }
+  go(nx, ny, false, now);
+}
+// Walking off a connected edge carries on into the neighbor, with no break in the step.
+function crossEdge(dx, dy, now) {
+  const p = state.play, m = p.map, dir = dy < 0 ? "north" : dy > 0 ? "south" : dx < 0 ? "west" : "east";
+  for (const L of m.links.filter(l => l.dir === dir)) {
+    const e = neighborEntry(L.map); if (!e) continue;
+    const n = e.map, [ox, oy] = linkOrigin(m, L, n), tx = p.x + dx - ox, ty = p.y + dy - oy;
+    if (!n.inb(tx, ty)) continue;
+    const a = n.resolved(tx, ty); if (a === "block" || a === "water") return;
+    const hop = a === "ledge" && dy === 1 && n.inb(tx, ty + 1) && walkable(n, tx, ty + 1);
+    if (a === "ledge" && !hop) return;
+    p.map = n; p.name = L.map; p.maps.add(L.map);
+    p.fx = p.x - ox; p.fy = p.y - oy; p.x = tx; p.y = hop ? ty + 1 : ty; p.hop = hop; p.start = now; p.dur = hop ? 300 : 150; p.done = false; p.steps++;
+    msg(`${L.map}`, "info"); return;
+  }
+}
+async function travel(w, now) {
+  const p = state.play; p.loading = true; held.length = 0;
+  const e = w.map === p.name ? { map: p.map } : w.map === state.name ? { map: state.map } : await loadWorld(w.map);
+  p.loading = false; if (state.play !== p) return;
+  if (!e) return msg(`This door leads to ${w.map}, which doesn't exist yet`, "err");
+  const [x, y] = w.x != null ? [w.x, w.y] : pickArrival(e.map, p.name);
+  if (!e.map.inb(x, y)) return msg(`This door leads to ${w.map} ${x},${y}, which is outside that map`, "err");
+  p.map = e.map; p.name = w.map; p.maps.add(w.map); p.x = p.fx = x; p.y = p.fy = y; p.done = true;
+  if (!REDUCED) state.fadeStart = performance.now();
+  msg(`${w.map}`, "info");
+}
+function go(nx, ny, hop, now) { const p = state.play; p.fx = p.x; p.fy = p.y; p.x = nx; p.y = ny; p.hop = hop; p.start = now; p.dur = hop ? 300 : 150; p.done = false; p.steps++; }
+function updatePlay(now) {
+  const p = state.play; if (!p) return;
+  if (!p.done && now - p.start >= p.dur) {
+    p.done = true;
+    const a = p.map.resolved(p.x, p.y), here = PACKS[p.map === state.map ? state.pack : p.map.pack] || PK();
+    if (a === "grass" && Math.random() < .12) { p.found++; if (!REDUCED) state.flashUntil = now + 540; msg(`${here.text.encounter || "A wild encounter in the tall grass"} at ${p.x},${p.y}!`, "info"); held.length = 0; }
+    else if (a === "warp") { const t = p.map.warps[`${p.x},${p.y}`], w = parseWarp(t); if (w) travel(w, now); else msg(t ? `Door at ${p.x},${p.y} leads to "${t}", which isn't a map. :warp map x,y fixes it.` : `Door at ${p.x},${p.y} has no target yet. In edit mode, :warp name sets one.`, "info"); }
+  }
+  if (p.done && !p.loading && held.length && now >= state.flashUntil) { const d = held[held.length - 1]; tryStep(d[0], d[1], now); }
+  const t = Math.min(1, (now - p.start) / p.dur);
+  centerOn(p.fx + (p.x - p.fx) * t, p.fy + (p.y - p.fy) * t);
+}
+const PLAY_DIRS = { KeyW:[0,-1], KeyA:[-1,0], KeyS:[0,1], KeyD:[1,0], ArrowUp:[0,-1], ArrowLeft:[-1,0], ArrowDown:[0,1], ArrowRight:[1,0] };
+function playKey(e) {
+  if (e.key === "Escape" || e.code === "KeyP") { stopPlay(); return true; }
+  const d = PLAY_DIRS[e.code]; if (!d) return false;
+  if (!held.some(h => h.k === e.code)) held.push(Object.assign([d[0], d[1]], { k: e.code }));
+  const p = state.play; if (p.done && !p.loading && performance.now() >= state.flashUntil) tryStep(d[0], d[1], performance.now());
+  return true;
+}
+window.addEventListener("keyup", e => { const i = held.findIndex(h => h.k === e.code); if (i >= 0) held.splice(i, 1); });
+
+/* ---------------------------------------------------------------- keys
+   Left-hand layout: WASD moves, hold Space paints, hold X erases.      */
+const DIRS = {
+  KeyW:[0,-1], KeyA:[-1,0], KeyS:[0,1], KeyD:[1,0],
+  ArrowUp:[0,-1], ArrowLeft:[-1,0], ArrowDown:[0,1], ArrowRight:[1,0],
+};
+let holdKey = null;
+function startHold(code, mode) { holdKey = code; setMode(mode); begin(); step(); }
+function releaseHold() { holdKey = null; if (state.mode === "insert" || state.mode === "erase") setMode("normal"); }
+window.addEventListener("keyup", e => { if (holdKey && e.code === holdKey) { releaseHold(); refreshUI(); } });
+window.addEventListener("blur", () => { held.length = 0; if (holdKey) { releaseHold(); refreshUI(); } });
+
+function handleKey(e) {
+  const k = e.key, code = e.code, ctrl = e.ctrlKey || e.metaKey, shift = e.shiftKey, mode = state.mode;
+  if (["Shift", "Control", "Alt", "Meta", "CapsLock"].includes(k)) return false;
+  if (ctrl) {
+    if (code === "KeyZ") { undo(shift); return true; }
+    if (code === "KeyY") { undo(true); return true; }
+    if (code === "KeyS") { runCommand("w"); return true; }
+    if (code === "KeyC") { if (mode === "visual") { yankRect(rectOf()); setMode("normal"); } else yankRect({ x0: state.cx, y0: state.cy, x1: state.cx, y1: state.cy }); return true; }
+    if (code === "KeyV") { paste(); return true; }
+    if (code === "KeyP") { openFinder(); return true; }
+    if (code === "KeyO") { goBack().then(refreshUI); return true; }
+    return false;
+  }
+  if (k === "Escape") { if (mode !== "normal") setMode("normal"); else msg(""); return true; }
+
+  const d = DIRS[code];
+  if (d) { moveBy(d[0], d[1], shift ? 4 : 1); return true; }
+  if (/^Digit[1-4]$/.test(code)) { state.layer = ALL[+code.slice(5) - 1]; return true; }
+  if (k === "Tab") { const i = ALL.indexOf(state.layer); state.layer = ALL[(i + (shift ? -1 : 1) + ALL.length) % ALL.length]; return true; }
+  if (code === "KeyQ" || code === "KeyE") { cycleBrush(code === "KeyE" ? 1 : -1); return true; }
+  if (code === "KeyR") { altBrush(); return true; }
+  if (k === "+") { setZoom(state.zoom + 1); return true; }
+  if (k === "-") { setZoom(state.zoom - 1); return true; }
+  if (k === "=") { setZoom(3); centerOn(state.cx, state.cy); return true; }
+  if (k === "?" || k === "F1") { openHelp(); return true; }
+
+  if (mode === "insert" || mode === "erase") {
+    // A fresh press of the held key means its release never arrived (an input
+    // method can swallow it): treat it as letting go and pressing again.
+    if (!e.repeat && code === holdKey) { releaseHold(); startHold(code, code === "Space" ? "insert" : "erase"); return true; }
+    // The command bar always opens, even mid-stroke.
+    if (k === ":" || k === "Enter") { releaseHold(); openCmd(); return true; }
+    return e.repeat && (code === "Space" || code === "KeyX");
+  }
+  if (mode === "visual") {
+    const r = rectOf(), size = `${r.x1 - r.x0 + 1}x${r.y1 - r.y0 + 1}`;
+    if (code === "Space" || code === "KeyF" || k === "Enter") { fillRect(r); setMode("normal"); msg(`Filled ${size}`); return true; }
+    if (code === "KeyX" || k === "Delete" || k === "Backspace") { clearRect(r); setMode("normal"); msg(`Cleared ${LNAME[state.layer]} in ${size}`); return true; }
+    if (code === "KeyC") { yankRect(r); setMode("normal"); return true; }
+    if (code === "KeyV") { setMode("normal"); return true; }
+    if (k === ":") { openCmd(); return true; }
+    return false;
+  }
+  // normal
+  if (e.repeat && (code === "Space" || code === "KeyX")) return true;
+  switch (code) {
+    case "Space": startHold("Space", "insert"); return true;
+    case "KeyX": startHold("KeyX", "erase"); return true;
+    case "KeyZ": undo(shift); return true;
+    case "KeyC": eyedrop(); return true;
+    case "KeyV": setMode("visual"); state.anchor = { x: state.cx, y: state.cy }; msg("Selecting. Move to grow it, then Space fills, X clears, C copies."); return true;
+    case "KeyF": flood(); return true;
+    case "KeyT": openFinder(); return true;
+    case "KeyG": state.grid = !state.grid; msg(state.grid ? "Grid on" : "Grid off"); return true;
+    case "KeyH": state.showAttrs = !state.showAttrs; msg(state.showAttrs ? "Collision overlay on" : "Collision overlay off"); return true;
+    case "KeyP": startPlay(); return true;
+    case "KeyO": followLink().then(refreshUI); return true;
+    case "KeyB": goBack().then(refreshUI); return true;
+    case "BracketLeft": nudgeLink(shift ? -4 : -1); return true;
+    case "BracketRight": nudgeLink(shift ? 4 : 1); return true;
+  }
+  if (k === ":" || k === "Enter" || k === "/") { openCmd(); return true; }
+  return false;
+}
+window.addEventListener("keydown", e => {
+  if (e.isComposing) return;
+  if (TUT.final && !e.repeat) { TUT.final = false; $("#coach").hidden = true; }
+  const tg = e.target; if (tg && (tg.tagName === "INPUT" || tg.tagName === "TEXTAREA")) return;
+  if (!$("#help").hidden) { e.preventDefault(); $("#help").hidden = true; return; }
+  if (!$("#export").hidden) { if (exportKey(e)) e.preventDefault(); return; }
+  if (!$("#world").hidden) { if (worldKey(e)) e.preventDefault(); return; }
+  if (state.play) { if (playKey(e)) e.preventDefault(); refreshUI(); return; }
+  if (handleKey(e)) { e.preventDefault(); refreshUI(); }
+});
+
+/* ---------------------------------------------------------------- mouse */
+let drag = null;
+function cellAt(e) { const r = cv.getBoundingClientRect(), ts = TILE * state.zoom; return [Math.floor((e.clientX - r.left + state.cam.x) / ts), Math.floor((e.clientY - r.top + state.cam.y) / ts)]; }
+function line(x0, y0, x1, y1) { const out = [], dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1; let err = dx + dy; for (;;) { out.push([x0, y0]); if (x0 === x1 && y0 === y1) return out; const e2 = 2 * err; if (e2 >= dy) { err += dy; x0 += sx; } if (e2 <= dx) { err += dx; y0 += sy; } } }
+cv.addEventListener("contextmenu", e => e.preventDefault());
+cv.addEventListener("pointerdown", e => {
+  window.focus(); if (state.play) return;
+  if (e.button === 1) { drag = { pan: true, x: e.clientX, y: e.clientY, cx: state.cam.x, cy: state.cam.y }; cv.setPointerCapture(e.pointerId); return; }
+  const [x, y] = cellAt(e); if (!state.map.inb(x, y)) return;
+  state.cx = x; state.cy = y;
+  if (e.button === 2) { eyedrop(); refreshUI(); return; }
+  if (state.mode === "visual") { refreshUI(); return; }
+  drag = { last: [x, y] }; cv.setPointerCapture(e.pointerId);
+  if (state.mode === "normal") paintAt(x, y); else step();
+  refreshUI();
+});
+cv.addEventListener("pointermove", e => {
+  if (!drag) return;
+  if (drag.pan) { state.cam.x = drag.cx - (e.clientX - drag.x); state.cam.y = drag.cy - (e.clientY - drag.y); clampCam(); return; }
+  const [x, y] = cellAt(e);
+  for (const [cx, cy] of line(drag.last[0], drag.last[1], x, y)) if (state.map.inb(cx, cy)) { state.cx = cx; state.cy = cy; if (state.mode === "normal") paintAt(cx, cy); else step(); }
+  drag.last = [x, y]; refreshUI();
+});
+const endDrag = () => { if (drag && !drag.pan && state.mode === "normal") commit(); drag = null; refreshUI(); };
+cv.addEventListener("pointerup", endDrag); cv.addEventListener("pointercancel", endDrag);
+cv.addEventListener("wheel", e => {
+  e.preventDefault();
+  if (e.ctrlKey || e.metaKey) { const r = cv.getBoundingClientRect(); setZoom(state.zoom + (e.deltaY < 0 ? 1 : -1), e.clientX - r.left, e.clientY - r.top); }
+  else { state.cam.x += e.shiftKey ? e.deltaY : e.deltaX; state.cam.y += e.shiftKey ? 0 : e.deltaY; clampCam(); }
+  refreshUI();
+}, { passive: false });
+
+/* ---------------------------------------------------------------- messages & UI */
+function msg(text, kind = "") { const el = $("#msg"); el.textContent = text || ""; el.className = text ? (kind || "info") : ""; clearTimeout(msgTimer); if (text) msgTimer = setTimeout(() => { el.textContent = ""; el.className = ""; refreshHint(); }, 9000); if (!text) refreshHint(); }
+function refreshHint() { const el = $("#msg"); if (!el.textContent) { el.className = ""; el.textContent = "Enter commands · WASD move · hold Space paint · hold X erase · Q/E tile · Z undo · P play · ? all keys"; el.dataset.hint = "1"; } }
+function describeCell(x, y, m = state.map) {
+  const names = [];
+  for (const L of ["overhead", "objects", "ground"]) { const k = m.layers[L][y][x]; if (k) names.push(TILES[k] ? TILES[k].label.replace(" (part)", "") : k); }
+  const r = m.resolved(x, y), w = m.warps[`${x},${y}`];
+  return `${[...new Set(names)].join(" on ") || "Empty"} · ${ATTR[r].label}${w ? ` to ${w}` : ""}`;
+}
+function buildPalette() {
+  const el = $("#palette"); el.innerHTML = "";
+  const sec = (title, cls) => { const s = document.createElement("div"); s.className = "sec"; s.innerHTML = `<h3>${title}</h3>`; const g = document.createElement("div"); g.className = cls; s.appendChild(g); el.appendChild(s); return g; };
+  const btn = (g, key, icon, label, text) => { const b = document.createElement("button"); b.type = "button"; b.className = "tb"; b.dataset.key = key; b.title = label; b.innerHTML = `<img src="${icon}" alt="">${text ? `<span>${text}</span>` : ""}`; if (!text) b.setAttribute("aria-label", label); g.appendChild(b); };
+  if (state.layer === "collision") {
+    const g = sec("Collision and events", "attrs");
+    for (const a of ATTRS) btn(g, "attr:" + a[0], ATTR[a[0]].icon, ATTR[a[0]].label, ATTR[a[0]].label);
+    const p = document.createElement("p"); p.className = "note"; p.textContent = "Painted cells override what the tile says. Auto hands the decision back to the tile. Doors get a target with :warp name x,y.";
+    g.parentNode.appendChild(p);
+  } else {
+    for (const [cat, keys] of PK().palette) { const g = sec(cat, "tiles"); for (const k of keys) btn(g, k, brushIcon(k), `${TILES[k].label} (${LNAME[TILES[k].layer]})`); }
+    const g = sec("Stamps", "tiles stamps"); for (const s of PK().stamps) btn(g, s.key, s.icon, `${s.label}, ${s.w}x${s.h}`, s.label);
+    for (const imp of IMPORTS) { const gi = sec(`Imported: ${imp.name}`, "tiles"); for (const k of imp.keys) btn(gi, k, brushIcon(k), TILES[k].label); }
+    const b = document.createElement("button"); b.type = "button"; b.className = "ghost import"; b.innerHTML = "Import a tileset PNG <kbd>:import</kbd>"; b.onclick = () => { b.blur(); runCommand("import"); };
+    el.appendChild(b);
+  }
+}
+$("#palette").addEventListener("click", e => {
+  const b = e.target.closest("[data-key]"); if (!b) return;
+  const k = b.dataset.key; if (k.startsWith("attr:")) selectAttr(k.slice(5)); else selectBrush(k);
+  b.blur(); refreshUI();
+});
+function refreshUI() {
+  const md = state.play ? "play" : state.mode;
+  document.documentElement.style.setProperty("--mode", MODES[md].color);
+  if (MODES[md].ink) document.documentElement.style.setProperty("--ink", MODES[md].ink);
+  $("#mode").textContent = MODES[md].label;
+  const lay = $("#layers");
+  if (!lay.childElementCount) {
+    ALL.forEach(L => { const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.dataset.layer = L; b.textContent = LNAME[L]; b.onclick = () => { state.layer = L; b.blur(); refreshUI(); }; lay.appendChild(b); });
+    const s = document.createElement("span"); s.className = "tabhint"; s.innerHTML = "<kbd>Tab</kbd>"; lay.appendChild(s);
+  }
+  lay.querySelectorAll(".chip").forEach(b => b.classList.toggle("on", b.dataset.layer === state.layer));
+  const sig = (state.layer === "collision") + ":" + state.pack + ":" + IMPORTS.map(i => i.id).join(",");
+  if (sig !== paletteSig) { buildPalette(); paletteSig = sig; }
+  const sel = state.layer === "collision" ? "attr:" + state.attrBrush : state.brush;
+  document.querySelectorAll("#palette [data-key]").forEach(b => { const on = b.dataset.key === sel; if (on !== b.classList.contains("on")) { b.classList.toggle("on", on); if (on) b.scrollIntoView({ block: "nearest" }); } });
+  $("#sLayer").textContent = LNAME[state.layer];
+  if (state.layer === "collision") { $("#sBrushIcon").src = ATTR[state.attrBrush].icon; $("#sBrush").textContent = ATTR[state.attrBrush].label; }
+  else { $("#sBrushIcon").src = brushIcon(state.brush); $("#sBrush").textContent = brushLabel(state.brush); }
+  const p = state.play, cx = p ? p.x : state.cx, cy = p ? p.y : state.cy;
+  const vm = viewMap();
+  $("#sUnder").textContent = vm ? describeCell(cx, cy, vm) : "";
+  $("#sPos").textContent = p && p.map !== state.map ? `${p.name} ${cx},${cy}` : `${cx},${cy}`;
+  $("#sSize").textContent = vm ? `${vm.w}x${vm.h}` : "";
+  $("#sZoom").textContent = `${state.zoom}x`;
+  $("#showcmd").textContent = count + pending;
+  $("#docname").innerHTML = `<b></b>${state.pack !== DEFAULT_PACK ? ` <span class="pk">· ${PK().name}</span>` : ""}${state.dirty ? ' <span class="mod">[+]</span>' : ""}`;
+  $("#docname b").textContent = state.name;
+  document.title = `${state.dirty ? "● " : ""}${state.name} · Tallgrass`;
+}
+
+/* ---------------------------------------------------------------- finder */
+let finderItems = [], finderSel = 0;
+function fuzzy(q, s) {
+  if (!q) return 1; q = q.toLowerCase(); s = s.toLowerCase(); let i = 0, sc = 0, last = -2;
+  for (let j = 0; j < s.length && i < q.length; j++) if (s[j] === q[i]) { sc += j === last + 1 ? 3 : 1; if (j === 0 || s[j - 1] === " ") sc += 2; last = j; i++; }
+  return i === q.length ? sc : 0;
+}
+function openFinder() {
+  $("#finder").hidden = false; const inp = $("#finderInput"); inp.value = "";
+  inp.placeholder = state.layer === "collision" ? "Find a collision type" : "Find a tile or stamp";
+  finderSel = 0; renderFinder(); inp.focus();
+}
+function closeFinder() { $("#finder").hidden = true; $("#finderInput").blur(); refreshUI(); }
+function renderFinder() {
+  const q = $("#finderInput").value.trim();
+  const pool = state.layer === "collision"
+    ? ATTRS.map(a => ({ key: "attr:" + a[0], label: ATTR[a[0]].label, cat: "Collision", icon: ATTR[a[0]].icon }))
+    : brushList().map(k => ({ key: k, label: brushLabel(k), cat: STAMP[k] ? `Stamp, ${STAMP[k].w}x${STAMP[k].h}` : `${TILES[k].cat} · ${TILES[k].layer ? LNAME[TILES[k].layer] : "current layer"}`, icon: brushIcon(k) }));
+  finderItems = pool.map(it => ({ ...it, s: Math.max(fuzzy(q, it.label) * 2, fuzzy(q, it.cat)) })).filter(it => it.s > 0);
+  if (q) finderItems.sort((a, b) => b.s - a.s);
+  finderSel = Math.max(0, Math.min(finderSel, finderItems.length - 1));
+  const ul = $("#finderList"); ul.innerHTML = "";
+  if (!finderItems.length) { ul.innerHTML = `<li class="empty">Nothing matches "${q.replace(/[<&]/g, "")}"</li>`; return; }
+  finderItems.slice(0, 80).forEach((it, i) => {
+    const li = document.createElement("li"); if (i === finderSel) li.className = "sel";
+    li.innerHTML = `<img src="${it.icon}" alt=""><span class="l"></span><span class="c"></span>`;
+    li.querySelector(".l").textContent = it.label; li.querySelector(".c").textContent = it.cat;
+    li.onmousedown = ev => { ev.preventDefault(); finderSel = i; chooseFinder(); };
+    ul.appendChild(li);
+  });
+  ul.querySelector(".sel")?.scrollIntoView({ block: "nearest" });
+}
+function chooseFinder() {
+  const it = finderItems[finderSel]; if (!it) return;
+  if (it.key.startsWith("attr:")) selectAttr(it.key.slice(5)); else selectBrush(it.key);
+  closeFinder(); msg(`Brush: ${it.label}`);
+}
+$("#finderInput").addEventListener("input", () => { finderSel = 0; renderFinder(); });
+$("#finderInput").addEventListener("keydown", e => {
+  const k = e.key, ctrl = e.ctrlKey;
+  if (k === "Escape") { e.preventDefault(); closeFinder(); }
+  else if (k === "Enter") { e.preventDefault(); chooseFinder(); }
+  else if (k === "ArrowDown" || (ctrl && (k === "n" || k === "j")) || (k === "Tab" && !e.shiftKey)) { e.preventDefault(); finderSel = Math.min(finderItems.length - 1, finderSel + 1); renderFinder(); }
+  else if (k === "ArrowUp" || (ctrl && (k === "p" || k === "k")) || (k === "Tab" && e.shiftKey)) { e.preventDefault(); finderSel = Math.max(0, finderSel - 1); renderFinder(); }
+});
+$("#finder").addEventListener("mousedown", e => { if (e.target.id === "finder") closeFinder(); });
+
+/* ---------------------------------------------------------------- command line */
+const hist = []; let histI = 0, lastCommand = Promise.resolve(); // the running command, so scripts can wait for it
+function openCmd(prefill = "") {
+  setMode(state.mode === "visual" ? "visual" : "normal");
+  $("#msg").hidden = true; $("#cmdwrap").hidden = false; const c = $("#cmd"); c.value = prefill; c.focus();
+  document.documentElement.style.setProperty("--mode", MODES.command.color); $("#mode").textContent = "COMMAND"; histI = hist.length;
+  if (MODES.command.ink) document.documentElement.style.setProperty("--ink", MODES.command.ink);
+  refreshMapNames().then(() => { if (!$("#cmdwrap").hidden) renderHints(); }); renderHints();
+  lesson("open");
+}
+function closeCmd() { $("#cmdwrap").hidden = true; $("#cmdHints").hidden = true; $("#msg").hidden = false; $("#cmd").blur(); refreshUI(); }
+$("#cmd").addEventListener("keydown", e => {
+  const c = e.target;
+  if (e.key === "Escape") { e.preventDefault(); closeCmd(); lesson("close"); }
+  else if (e.key === "Enter") { e.preventDefault(); const v = c.value; closeCmd(); lastCommand = Promise.resolve(runCommand(v)).then(() => lesson("run", v)); refreshUI(); }
+  else if (e.key === "Backspace" && !c.value) { e.preventDefault(); closeCmd(); lesson("close"); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); if (histI > 0) { c.value = hist[--histI]; renderHints(); lesson("history"); } }
+  else if (e.key === "ArrowDown") { e.preventDefault(); if (histI < hist.length - 1) c.value = hist[++histI]; else { histI = hist.length; c.value = ""; } renderHints(); }
+  else if (e.key === "Tab") { e.preventDefault(); const before = c.value; c.value = complete(c.value); renderHints(); if (c.value !== before) lesson("complete", c.value); }
+});
+const CMD_NAMES = ["w", "e", "ls", "rm", "new", "gen", "resize", "name", "export", "import", "load", "warp", "nowarp", "spawn", "layer", "set", "attr", "play", "help", "goto", "restore", "wq", "q", "pack", "connect", "disconnect", "links", "world", "rename", "tutorial"];
+function complete(v) {
+  const parts = v.split(/\s+/); const last = parts[parts.length - 1];
+  let pool;
+  if (parts.length <= 1) pool = CMD_NAMES;
+  else { const c = parts[0].replace("!", ""); pool = (c === "e" || c === "rm" || c === "edit" || c === "open" || (c === "warp" && parts.length === 2) || ((c === "connect" || c === "disconnect") && parts.length === 3)) ? mapNames.filter(n => n !== state.name || (c !== "connect" && c !== "disconnect")) : (c === "connect" || c === "disconnect") && parts.length === 2 ? Object.keys(OPP) : c === "export" && parts.length === 2 ? ["world"] : c === "layer" ? ALL : c === "pack" ? Object.keys(PACKS) : c === "attr" ? ATTRS.map(a => a[0]) : c === "set" ? ["grid", "nogrid", "attrs", "noattrs", "zoom="] : []; }
+  const hits = pool.filter(p => p.startsWith(last)); if (!hits.length) return v;
+  if (hits.length === 1) { parts[parts.length - 1] = hits[0] + (hits[0].endsWith("=") ? "" : " "); return parts.join(" "); }
+  let pre = hits[0]; for (const h of hits) while (!h.startsWith(pre)) pre = pre.slice(0, -1);
+  $("#msg").hidden = false; msg(hits.join("  ")); $("#msg").hidden = true; // stays visible after close
+  parts[parts.length - 1] = pre; return parts.join(" ");
+}
+const slug = s => (s || "").trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
+function parseSize(s) { const m = /(\d+)\s*[x×*, ]\s*(\d+)/.exec(s || ""); return m ? [Math.max(4, Math.min(256, +m[1])), Math.max(4, Math.min(256, +m[2]))] : null; }
+/* ---------------------------------------------------------------- command hints
+   While the bar is open, a list above it shows what you can type: matching
+   commands with an example each, then, once a command is typed, how to use it
+   and what Tab can fill in.                                                */
+const CMD_INFO = [
+  ["w", "w [name]", "save this map (Ctrl+S). A name saves it under that name"],
+  ["e", "e name", "open a saved map. Tab completes the names"],
+  ["ls", "ls", "list your saved maps"],
+  ["new", "new 40x28", "start a blank map in this tile set"],
+  ["gen", "gen 40x28 [seed]", "generate a sample route to play with"],
+  ["world", "world", "every map and how they connect"],
+  ["connect", "connect north map [offset]", "join this map's edge to another map"],
+  ["warp", "warp map [x,y]", "make the door under the cursor lead to another map. warp! adds the way back"],
+  ["pack", "pack classic", "switch tile set (remembered for next time)"],
+  ["export", "export [world] [folder]", "write files for your game. export! picks the folder"],
+  ["links", "links", "this map's edges, doors and problems"],
+  ["disconnect", "disconnect [dir] [map]", "remove an edge link"],
+  ["nowarp", "nowarp", "remove the door under the cursor"],
+  ["rename", "rename new-name", "rename the saved map and fix every link to it"],
+  ["name", "name new-name", "rename this map (the next w saves it under that name)"],
+  ["rm", "rm name", "move a saved map to the trash"],
+  ["resize", "resize 50x40", "grow or crop the map from the bottom right"],
+  ["import", "import", "add a tileset PNG (16x16 tiles)"],
+  ["load", "load", "open a map file with a file picker"],
+  ["spawn", "spawn", "the player starts at the cursor"],
+  ["restore", "restore", "bring back your last session"],
+  ["goto", "goto 12,8", "jump to a cell. Just 12,8 works too"],
+  ["layer", "layer objects", "pick a layer: ground, objects, overhead, collision"],
+  ["set", "set grid", "view options: grid, nogrid, attrs, noattrs, zoom=4"],
+  ["attr", "attr block", "default collision for an imported tile"],
+  ["play", "play", "walk the map as the player (same as P)"],
+  ["help", "help", "every key"],
+  ["tutorial", "tutorial", "a short hands-on lesson on this bar"],
+  ["q", "q", "quit. q! quits without saving"],
+  ["wq", "wq", "save and quit"],
+];
+const CMD_BY = Object.fromEntries(CMD_INFO.map(c => [c[0], c]));
+const CMD_ALIAS = { write: "w", x: "wq", edit: "e", open: "e", maps: "ls", h: "help", generate: "gen", tileset: "import", quit: "q" };
+function hintOptions(cmd, argIndex) {
+  if (["e", "rm", "edit", "open"].includes(cmd) || (cmd === "warp" && argIndex === 0) || ((cmd === "connect" || cmd === "disconnect") && argIndex === 1)) return mapNames;
+  if ((cmd === "connect" || cmd === "disconnect") && argIndex === 0) return Object.keys(OPP);
+  if (cmd === "pack") return Object.keys(PACKS);
+  if (cmd === "layer") return ALL;
+  if (cmd === "export" && argIndex === 0) return ["world"];
+  if (cmd === "set") return ["grid", "nogrid", "attrs", "noattrs", "zoom="];
+  if (cmd === "attr") return ATTRS.map(a => a[0]);
+  return [];
+}
+function renderHints() {
+  const box = $("#cmdHints"), v = $("#cmd").value.replace(/^:/, ""), esc = t => String(t).replace(/[<&]/g, ch => ch === "<" ? "&lt;" : "&amp;");
+  const keys = `<div class="keys"><kbd>Tab</kbd> completes · <kbd>↑</kbd> <kbd>↓</kbd> earlier commands · <kbd>Enter</kbd> runs · <kbd>Esc</kbd> closes</div>`;
+  if (/^\d/.test(v)) { box.innerHTML = `<div class="usage"><code>12,8</code> &nbsp;jumps the cursor to that cell</div>${keys}`; box.hidden = false; return; }
+  const parts = v.split(/\s+/), word = parts[0].replace(/!$/, ""), typedArgs = parts.length > 1;
+  const cmd = CMD_ALIAS[word] || word, info = CMD_BY[cmd];
+  if (typedArgs && info) {
+    const argIndex = parts.length - 2, last = parts[parts.length - 1], opts = hintOptions(cmd, argIndex).filter(o => o.startsWith(last)).slice(0, 14);
+    box.innerHTML = `<div class="usage"><code><b>${esc(info[1].split(" ")[0])}</b>${esc(info[1].slice(info[1].indexOf(" ")))}</code> &nbsp;${esc(info[2])}</div>`
+      + (opts.length ? `<div class="opts">${opts.map(o => `<span>${esc(o)}</span>`).join("")}</div>` : "") + keys;
+    box.hidden = false; return;
+  }
+  const hits = CMD_INFO.filter(c => c[0].startsWith(word) || (word.length > 1 && c[2].toLowerCase().includes(word.toLowerCase()))).slice(0, 8);
+  if (!hits.length) { box.innerHTML = `<div class="usage">No command starts with <code>${esc(word)}</code>. <code>help</code> lists them all.</div>${keys}`; box.hidden = false; return; }
+  box.innerHTML = `<ul>${hits.map((c, i) => `<li class="${i === 0 && word ? "top" : ""}"><code><b>${esc(c[1].slice(0, word.length && c[0].startsWith(word) ? word.length : 0))}</b>${esc(c[1].slice(word.length && c[0].startsWith(word) ? word.length : 0))}</code><span class="d">${esc(c[2])}</span></li>`).join("")}</ul>${keys}`;
+  box.hidden = false;
+}
+$("#cmd").addEventListener("input", () => { renderHints(); });
+
+/* ---------------------------------------------------------------- the command bar lesson
+   :tutorial walks through the bar one step at a time. Each step moves on when
+   you do the thing. Your map is set aside first and comes back at the end.  */
+const PRACTICE = "tutorial-practice";
+const LESSON = [
+  { say: `Everything that isn't painting happens in the <b>command bar</b>. Press <kbd>Enter</kbd> to open it. <kbd>:</kbd> works too.`, done: e => e.ev === "open" },
+  { say: `That's it at the bottom, with the commands you can type listed above it. Press <kbd>Esc</kbd> to close it without running anything.`, done: e => e.ev === "close" },
+  { say: `Open it again, type <code>new 20x14</code> and press <kbd>Enter</kbd>. Type just the words, no <code>:</code> needed.`, done: e => e.ev === "run" && e.cmd === "new" },
+  { say: `You rarely type whole words. Open the bar, type <code>ge</code> and press <kbd>Tab</kbd>. It finishes the word for you.`, done: e => e.ev === "complete" },
+  { say: `Now make the line read <code>gen 20x14</code> and press <kbd>Enter</kbd>. You get a sample route to play with.`, done: e => e.ev === "run" && e.cmd === "gen" },
+  { say: `Save it: <code>w ${PRACTICE}</code> then <kbd>Enter</kbd>. After that, plain <code>w</code> or <kbd>Ctrl</kbd> + <kbd>S</kbd> saves again.`, done: e => e.ev === "run" && e.cmd === "w" },
+  { say: `Open the bar and press <kbd>↑</kbd>. Your last command comes back, ready to run again or change. Press <kbd>Esc</kbd> when you've seen it.`, done: e => e.ev === "history" },
+  { say: `List your saved maps with <code>ls</code>. To open one, type <code>e</code>, a space, the start of its name, and <kbd>Tab</kbd>.`, done: e => e.ev === "run" && (e.cmd === "ls" || e.cmd === "e") },
+  { say: `See every map and how they connect: <code>world</code>. Press <kbd>Esc</kbd> to close the world view.`, done: e => e.ev === "run" && e.cmd === "world" },
+  { say: `Last one, tidy up: <code>rm ${PRACTICE}</code> moves the practice map to the trash.`, done: e => e.ev === "run" && e.cmd === "rm" },
+  { say: `<span class="ok">That's the command bar.</span> The list above it always shows what you can type, <code>help</code> and <kbd>?</kbd> show everything, and <code>tutorial</code> runs this again. Your map is back.`, final: true },
+];
+const TUT = { on: false, i: 0, saved: null, final: false };
+function savePrefs(patch) { return host.getSession("prefs").then(t => host.setSession("prefs", JSON.stringify({ ...(JSON.parse(t || "{}") || {}), ...patch }))).catch(() => { }); }
+function showLesson() {
+  const st = LESSON[TUT.i];
+  $("#coachText").innerHTML = st.say;
+  $("#coachStep").textContent = st.final ? "done" : `${TUT.i + 1} of ${LESSON.length - 1}`;
+  $("#coachFill").style.width = `${Math.round(TUT.i / (LESSON.length - 1) * 100)}%`;
+  $("#coach").hidden = false;
+}
+function startLesson() {
+  if (TUT.on) return endLesson();
+  TUT.saved = { s: snap(), dirty: state.dirty, undo: state.undo, redo: state.redo, cx: state.cx, cy: state.cy, layer: state.layer, brush: state.brush };
+  state.undo = []; state.redo = [];
+  Object.assign(TUT, { on: true, i: 0, final: false });
+  savePrefs({ tutorialSeen: true });
+  showLesson(); msg("Lesson started. Follow the card at the top right. × on the card stops it and brings your map back.", "info");
+}
+function putMapBack() {
+  const S = TUT.saved; if (!S) return; TUT.saved = null;
+  restore(S.s); Object.assign(state, { undo: S.undo, redo: S.redo, dirty: S.dirty, cx: S.cx, cy: S.cy, layer: S.layer, brush: S.brush });
+  state.returns.clear(); clampCursor(); centerOn(state.cx, state.cy); scheduleSave(); refreshUI();
+}
+function endLesson() { TUT.on = false; TUT.final = false; $("#coach").hidden = true; putMapBack(); msg("Lesson closed. Your map is back. tutorial starts it again."); }
+function lesson(ev, line) {
+  if (!TUT.on || TUT.final) return;
+  const cmd = ev === "run" ? (line || "").trim().replace(/^:/, "").split(/\s+/)[0].replace(/!$/, "") : null;
+  if (!LESSON[TUT.i].done({ ev, cmd, line })) return;
+  TUT.i++;
+  if (LESSON[TUT.i].final) { TUT.final = true; TUT.on = false; putMapBack(); }
+  showLesson();
+}
+$("#coachX").onclick = e => { e.currentTarget.blur(); if (TUT.final) { TUT.final = false; $("#coach").hidden = true; } else endLesson(); };
+
+function runCommand(line) {
+  line = (line || "").trim().replace(/^:/, ""); if (!line) return;
+  hist.push(line);
+  const go = /^(\d+)\s*[, ]\s*(\d+)$/.exec(line); if (go) { moveTo(+go[1], +go[2]); return msg(`Cursor at ${state.cx},${state.cy}`); }
+  const [raw] = line.split(/\s+/), rest = line.slice(raw.length).trim(), args = rest ? rest.split(/\s+/) : [];
+  const bang = raw.endsWith("!"), cmd = raw.replace(/!$/, "");
+  const f = COMMANDS[cmd]; if (!f) return msg(`Unknown command :${cmd}. Press ? to see every command.`, "err");
+  return Promise.resolve().then(() => f(args, rest, bang)).catch(err => msg(err.message || String(err), "err")).then(refreshUI);
+}
+// A file path (anything with a slash or ~) is opened as-is; a bare word is a map name.
+const isPath = s => /[\/~]/.test(s || "");
+const COMMANDS = {
+  async w(args, rest) {
+    if (rest) state.name = slug(rest) || state.name;
+    let prev = null; try { prev = await host.readMap(state.name); } catch { }
+    let res; try { res = await host.writeMap(state.name, lightData()); } catch (err) { return msg(err.message, "err"); }
+    state.dirty = false; scheduleSave(); await refreshMapNames();
+    let touched = []; try { touched = await syncLinks(state.name, state.map, prev); } catch (err) { msg(`Saved, but could not update linked maps: ${err.message}`, "err"); return true; }
+    msg(`Saved "${state.name}" ${res.where}, ${state.map.w}x${state.map.h}.${touched.length ? ` Updated the link${touched.length > 1 ? "s" : ""} in ${touched.join(", ")}.` : " :export gives you files for your game."}`, "info");
+    return true;
+  },
+  async wq(args, rest) { if (await COMMANDS.w(args, rest) && host.native) await COMMANDS.q([], "", true); },
+  async e(args, rest) {
+    if (!rest) return COMMANDS.ls();
+    if (isPath(rest) && host.native) { const d = await host.readMap(rest); return openData(d, d.name, `Opened ${rest}. Z undoes the switch.`); }
+    const name = slug(rest), d = await host.readMap(name); if (!d) return msg(`No saved map called "${name}". :ls lists them.`, "err");
+    await openData(d, name, `Opened "${name}". Z undoes the switch.`);
+  },
+  async ls() { const names = await refreshMapNames(); msg(names.length ? `Saved maps: ${names.join(", ")}. Open one with :e name` : "No saved maps yet. :w name saves this one.", "info"); },
+  async rm(args, rest) {
+    const name = slug(rest); if (!name) return msg("Give a name, like :rm route-2", "err");
+    if (!await host.removeMap(name)) return msg(`No saved map called "${name}"`, "err");
+    await refreshMapNames(); msg(host.native ? `Moved "${name}.json" to the trash` : `Deleted "${name}" from this browser`);
+  },
+  new(args, rest) {
+    const s = parseSize(rest) || [30, 20];
+    snapshotOp(() => { state.map = new TMap(s[0], s[1], groundFill()); state.name = "untitled"; state.cx = Math.floor(s[0] / 2); state.cy = Math.floor(s[1] / 2); });
+    clampCam(); centerOn(state.cx, state.cy); msg(`New ${s[0]}x${s[1]} map. Z brings back the previous one.`, "info");
+  },
+  gen(args, rest) {
+    const s = parseSize(args[0]) || [state.map.w, state.map.h], seed = args[1] != null ? parseInt(args[1], 10) : undefined;
+    snapshotOp(() => { state.map = generateRoute(s[0], s[1], seed); state.cx = Math.floor(s[0] / 2); state.cy = s[1] - 2; clampCursor(); });
+    clampCam(); centerOn(state.cx, state.cy); msg(`Generated a ${s[0]}x${s[1]} route. :gen again for another, Z to undo.`, "info");
+  },
+  resize(args, rest) {
+    const s = parseSize(rest); if (!s) return msg("Give a size, like :resize 50x40", "err");
+    snapshotOp(() => { state.map.resize(s[0], s[1]); clampCursor(); }); clampCam(); msg(`Resized to ${s[0]}x${s[1]}. Grows or crops from the bottom right.`);
+  },
+  name(args, rest) { const n = slug(rest); if (!n) return msg("Give a name, like :name route-2", "err"); state.name = n; markDirty(); msg(`Renamed to "${n}"`); },
+  export(args, rest, bang) {
+    if (args[0] === "world") { const dir = rest.slice(5).trim(); return exportWorld(bang ? { pick: true } : dir ? { dir } : {}); }
+    return doExport(bang ? { pick: true } : rest ? { dir: rest } : {});
+  },
+  async import() {
+    msg("Pick a PNG tileset. Tiles are cut into 16x16 pieces.");
+    const f = await host.pick("tileset"); if (f) await importTileset(f);
+  },
+  async load() {
+    msg("Pick a Tallgrass map JSON file");
+    const f = await host.pick("map"); if (f) await loadMapFile(f);
+  },
+  async warp(args, rest, bang) {
+    if (!rest) return msg("Give a target, like :warp house-1 4,7, or :warp house-1 to land on its door. :warp! also makes the way back.", "err");
+    const m = state.map, k = `${state.cx},${state.cy}`, w = parseWarp(rest);
+    let target = rest.trim(), note = "";
+    if (w) {
+      const e = await mapByName(w.map);
+      if (!e) { if (bang) return msg(`${w.map} doesn't exist yet. Make and save it first, then :warp! can write the way back into it.`, "err"); note = ` ${w.map} doesn't exist yet, so this door is broken until you make it.`; }
+      else {
+        const [x, y] = w.x != null ? [w.x, w.y] : pickArrival(e.map, state.name);
+        if (!e.map.inb(x, y)) return msg(`${w.map} is ${e.map.w}x${e.map.h}, so ${x},${y} is outside it`, "err");
+        target = `${w.map} ${x},${y}`;
+      }
+      if (bang && w.map === state.name) return msg("A door within the same map: use :warp without ! and set both ends yourself.", "err");
+    } else if (bang) return msg("Give a map name, like :warp! house-1", "err");
+    const cells = doorCells(m, state.cx, state.cy);
+    snapshotOp(() => { for (const [x, y] of cells) { m.warps[`${x},${y}`] = target; if (m.resolved(x, y) !== "warp") m.attrs[y][x] = "warp"; } });
+    if (bang) { const t = parseWarp(target); state.returns.set(k, t); note = ` :w also writes the way back into ${t.map} ${t.x},${t.y}.`; }
+    msg(`Door at ${k}${cells.length > 1 ? ` and ${cells.length - 1} more cell` : ""} leads to ${target}.${note} O follows it.`, "info");
+  },
+  async connect(args) {
+    const [dir, name, off] = args;
+    if (!OPP[dir] || !name) return msg("Try :connect north route-2 (or south, east, west). Add a number to set the offset; without one, Tallgrass lines up the paths.", "err");
+    if (name === state.name) return msg("A map can't connect to itself", "err");
+    const e = await loadWorld(name, true); if (!e) return msg(`No saved map called ${name}. :ls lists them.`, "err");
+    const offset = off != null && off !== "auto" ? parseInt(off, 10) : autoOffset(state.map, dir, e.map);
+    if (Number.isNaN(offset)) return msg("The offset is a number of cells, like :connect north route-2 3", "err");
+    snapshotOp(() => { state.map.links = [...state.map.links.filter(l => !(l.dir === dir && l.map === name)), { dir, map: name, offset }]; });
+    msg(`${state.name} ${dir} edge joins ${name}, offset ${offset}. [ and ] slide it, O walks across, :w saves both maps.`, "info");
+  },
+  disconnect(args) {
+    const [dir, name] = args, m = state.map;
+    const gone = m.links.filter(l => dir ? l.dir === dir && (!name || l.map === name) : linksAtCursor()[0] === l);
+    if (!gone.length) return msg(dir ? `No ${dir} link${name ? ` to ${name}` : ""}` : "Put the cursor on a linked edge, or say which: :disconnect north route-2", "err");
+    snapshotOp(() => { m.links = m.links.filter(l => !gone.includes(l)); });
+    msg(`Removed ${gone.map(l => `${l.dir} link to ${l.map}`).join(", ")}. :w also removes it from the other map.`);
+  },
+  async links() {
+    const m = state.map, W = await checkWorld(), mine = W.problems.filter(p => p.startsWith(state.name + " ") || p.startsWith(state.name + ":") || p.includes(` ${state.name} `));
+    const edges = m.links.map(l => `${l.dir} ${l.map}${l.offset ? ` ${l.offset > 0 ? "+" : ""}${l.offset}` : ""}`), doors = Object.keys(m.warps).length;
+    msg(`${edges.length ? `Edges: ${edges.join(", ")}` : "No edge connections"}. ${doors} door cell${doors === 1 ? "" : "s"}. ${mine.length ? `${mine.length} problem${mine.length > 1 ? "s" : ""}: ${mine[0]}${mine.length > 1 ? "; :world lists all" : ""}` : "Nothing broken."}`, mine.length ? "err" : "info");
+  },
+  world() { return openWorld(); },
+  async rename(args, rest) {
+    const to = slug(rest), from = state.name;
+    if (!to) return msg("Give the new name, like :rename route-2", "err");
+    const names = await host.listMaps();
+    if (!names.includes(from)) return msg(`${from} isn't saved yet. :w ${to} saves it under the new name.`, "err");
+    if (names.includes(to)) return msg(`There is already a map called ${to}`, "err");
+    const own = (warps) => { let n = 0; for (const [k, v] of Object.entries(warps)) { const w = parseWarp(v); if (w && w.map === from) { warps[k] = v.replace(/^\s*\S+/, to); n++; } } return n; };
+    own(state.map.warps); state.name = to;
+    await host.writeMap(to, lightData());
+    const touched = [];
+    for (const other of names) {
+      if (other === from) continue;
+      const d = await host.readMap(other); if (!d) continue;
+      let n = own(d.warps || {});
+      for (const c of d.connections || []) if (c.map === from) { c.map = to; n++; }
+      if (n) { await host.writeMap(other, canonical(d)); touched.push(other); }
+    }
+    await host.removeMap(from); WORLD.clear(); refreshMapNames(); state.dirty = false; scheduleSave();
+    for (const t of trail) if (t.map === from) t.map = to;
+    msg(`Renamed ${from} to ${to}.${touched.length ? ` Updated links in ${touched.join(", ")}.` : ""}`, "info");
+  },
+  nowarp() { const k = `${state.cx},${state.cy}`, m = state.map; snapshotOp(() => { delete m.warps[k]; if (m.attrs[state.cy][state.cx] === "warp") m.attrs[state.cy][state.cx] = "auto"; }); msg(`Removed the warp at ${k}`); },
+  spawn() {
+    const m = state.map;
+    snapshotOp(() => { for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) if (m.attrs[y][x] === "spawn") m.attrs[y][x] = "auto"; m.attrs[state.cy][state.cx] = "spawn"; });
+    msg(`Player starts at ${state.cx},${state.cy}`, "info");
+  },
+  layer(args) { const L = ALL.find(l => l.startsWith((args[0] || "").toLowerCase())); if (!L) return msg("Layers: ground, objects, overhead, collision", "err"); state.layer = L; },
+  set(args) {
+    for (const a of args) {
+      if (a === "grid") state.grid = true; else if (a === "nogrid") state.grid = false;
+      else if (a === "attrs") state.showAttrs = true; else if (a === "noattrs") state.showAttrs = false;
+      else if (a.startsWith("zoom=")) setZoom(parseInt(a.slice(5), 10) || 3);
+      else return msg(`Unknown option ${a}. Try grid, nogrid, attrs, noattrs, zoom=4`, "err");
+    }
+  },
+  attr(args) {
+    const v = args[0], t = TILES[state.brush];
+    if (!t || !t.imported) return msg("Only imported tiles take a default. For built-in tiles, paint the Collision layer.", "err");
+    if (v !== "none" && !ATTR[v]) return msg(`Pick one of: none, ${ATTRS.slice(1).map(a => a[0]).join(", ")}`, "err");
+    t.attr = v === "none" ? null : v; const imp = IMPORTS.find(i => i.keys.includes(t.key)); imp.attrs[t.key.split(":")[2]] = t.attr; markDirty();
+    msg(`${t.label} now defaults to ${t.attr ? ATTR[t.attr].label : "walkable"}`);
+  },
+  pack(args) {
+    const list = Object.values(PACKS).map(p => `${p.id} (${p.name})`).join(", ");
+    if (!args[0]) return msg(`Pack: ${PK().name}. Installed: ${list}. :pack name switches.`, "info");
+    const id = Object.keys(PACKS).find(k => k === args[0]) || Object.keys(PACKS).find(k => k.startsWith(args[0]));
+    if (!id) return msg(`No pack called ${args[0]}. Installed: ${list}`, "err");
+    const P = PACKS[id];
+    snapshotOp(() => { state.pack = id; });
+    host.getSession("prefs").then(t => host.setSession("prefs", JSON.stringify({ ...(JSON.parse(t || "{}") || {}), pack: id }))).catch(() => { }); // next launch starts here
+    state.prevBrush = P.brush || P.ground; state.brush = P.brush || P.ground; if (state.layer === "collision") state.layer = "ground";
+    msg(`${P.name} tiles. :new ${state.map.w}x${state.map.h} starts a blank ${P.name} map, :gen makes a sample one.`, "info");
+  },
+  play() { startPlay(); },
+  help() { openHelp(); },
+  tutorial() { startLesson(); },
+  goto(args) { const [x, y] = (args.join(" ").match(/\d+/g) || []).map(Number); if (x == null || y == null) return msg("Try :goto 12,8", "err"); moveTo(x, y); },
+  async restore() {
+    let s = null; try { s = JSON.parse(await host.getSession("previous") || "null"); } catch { }
+    if (!s || !s.map) return msg("No earlier session to bring back", "err");
+    await openData(s.map, s.name, `Restored "${s.name || "untitled"}" from your last session. Z undoes it.`);
+  },
+  async q(args, rest, bang) {
+    if (host.native && state.dirty && !bang) return msg("Unsaved changes. :w saves, :wq saves and quits, :q! quits anyway (the session is kept for :restore).", "err");
+    await window.tallgrassFlush(); await host.quit();
+  },
+};
+COMMANDS.write = COMMANDS.w; COMMANDS.x = COMMANDS.wq; COMMANDS.edit = COMMANDS.e; COMMANDS.open = COMMANDS.e; COMMANDS.quit = COMMANDS.q;
+COMMANDS.maps = COMMANDS.ls; COMMANDS.h = COMMANDS.help; COMMANDS.generate = COMMANDS.gen; COMMANDS.tileset = COMMANDS.import;
+
+/* ---------------------------------------------------------------- data */
+const packField = () => state.pack !== DEFAULT_PACK ? { pack: state.pack } : {};
+function lightData() {
+  const m = state.map;
+  return { format: "tallgrass-map", version: 1, name: state.name, width: m.w, height: m.h, tileSize: TILE, ...packField(),
+    layers: m.layers, attributes: m.attrs, warps: m.warps, ...linkField(m),
+    imports: IMPORTS.map(i => ({ id: i.id, name: i.name, src: i.src, attrs: i.attrs })) };
+}
+const linkField = m => m.links.length ? { connections: m.links.map(l => ({ dir: l.dir, map: l.map, offset: l.offset })) } : {};
+async function registerImport(imp) {
+  const have = IMPORTS.find(i => i.id === imp.id); if (have) return have;
+  const img = new Image(); img.src = imp.src; await img.decode();
+  const cols = Math.floor(img.width / 16), rows = Math.floor(img.height / 16), keys = [];
+  const full = mk(img.width, img.height), fx = full.getContext("2d", { willReadFrequently: true }); fx.drawImage(img, 0, 0);
+  const attrs = imp.attrs || {};
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const d = fx.getImageData(c * 16, r * 16, 16, 16).data; let any = false; for (let i = 3; i < d.length; i += 4) if (d[i]) { any = true; break; }
+    if (!any) continue;
+    const idx = r * cols + c, key = `img:${imp.id}:${idx}`, sub = mk(); sub.getContext("2d").drawImage(img, c * 16, r * 16, 16, 16, 0, 0, 16, 16);
+    TILES[key] = { key, label: `${imp.name} #${idx}`, cat: `Imported: ${imp.name}`, layer: null, attr: attrs[idx] || null, auto: false, connects: new Set([key]), canvas: sub, imported: true };
+    keys.push(key);
+  }
+  const rec = { id: imp.id, name: imp.name, src: imp.src, attrs, cols, rows, keys };
+  IMPORTS.push(rec); return rec;
+}
+async function dataToMap(d) {
+  if (!d || d.format !== "tallgrass-map") throw new Error("This file is not a Tallgrass map");
+  for (const imp of d.imports || []) await registerImport(imp);
+  const w = d.width | 0, h = d.height | 0; if (w < 1 || h < 1) throw new Error("The map has no size");
+  const m = new TMap(w, h, null);
+  const fit = (g, def) => Array.from({ length: h }, (_, y) => Array.from({ length: w }, (_, x) => g?.[y]?.[x] ?? def));
+  m.pack = d.pack || DEFAULT_PACK;
+  const ground = (PACKS[m.pack] || PACKS[DEFAULT_PACK]).ground;
+  for (const L of LAYERS) m.layers[L] = fit(d.layers?.[L], L === "ground" ? ground : null);
+  m.attrs = fit(d.attributes, "auto"); m.warps = { ...(d.warps || {}) };
+  m.links = (Array.isArray(d.connections) ? d.connections : []).filter(c => c && OPP[c.dir] && c.map).map(c => ({ dir: c.dir, map: String(c.map), offset: c.offset | 0 }));
+  return m;
+}
+async function openData(d, name, note) {
+  try {
+    const m = await dataToMap(d);
+    snapshotOp(() => { state.map = m; state.pack = m.pack; state.name = slug(name || d.name) || "untitled"; clampCursor(); });
+    state.returns.clear(); for (const L of m.links) loadWorld(L.map, true);
+    if (!PACKS[m.pack]) note = `${note || `Opened "${state.name}"`}. The ${m.pack} pack is not installed, so its tiles show as missing.`;
+    state.dirty = false; scheduleSave(); clampCam(); follow(); msg(note || `Opened "${state.name}"`, "info");
+  } catch (err) { msg(`Could not open that map: ${err.message}`, "err"); }
+  refreshUI();
+}
+function readFile(file, as) {
+  if (!(file instanceof Blob)) return Promise.resolve(as === "url" ? file.dataURL : file.text); // from the native picker
+  return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); as === "url" ? r.readAsDataURL(file) : r.readAsText(file); }); }
+async function importTileset(file) {
+  try {
+    const src = await readFile(file, "url"), name = file.name.replace(/\.[^.]+$/, "").slice(0, 24) || "tileset";
+    const rec = await registerImport({ id: "t" + Date.now().toString(36), name, src });
+    if (!rec.keys.length) { IMPORTS.splice(IMPORTS.indexOf(rec), 1); return msg(`${file.name} has no 16x16 tiles with visible pixels`, "err"); }
+    markDirty(); paletteSig = null; if (state.layer === "collision") state.layer = "ground"; selectBrush(rec.keys[0]);
+    msg(`Imported ${rec.keys.length} tiles from ${file.name}. They paint on the current layer. :attr block sets a tile's default collision.`, "info");
+  } catch (err) { msg(`Could not read that image: ${err.message || err}`, "err"); }
+  refreshUI();
+}
+async function loadMapFile(file) { try { const d = JSON.parse(await readFile(file, "text")); await openData(d, d.name || file.name.replace(/\.json$/i, "")); } catch (err) { msg(`Could not read ${file.name}: ${err.message}`, "err"); refreshUI(); } }
+$("#fileTiles").addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; if (f) importTileset(f); });
+$("#fileMap").addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; if (f) loadMapFile(f); });
+let dragDepth = 0;
+window.addEventListener("dragenter", e => { if ([...(e.dataTransfer?.types || [])].includes("Files")) { dragDepth++; $("#drop").hidden = false; } });
+window.addEventListener("dragleave", () => { if (--dragDepth <= 0) { dragDepth = 0; $("#drop").hidden = true; } });
+window.addEventListener("dragover", e => e.preventDefault());
+window.addEventListener("drop", e => {
+  e.preventDefault(); dragDepth = 0; $("#drop").hidden = true;
+  const f = e.dataTransfer.files[0]; if (!f) return;
+  if (/json$/i.test(f.name) || f.type.includes("json")) loadMapFile(f); else if (f.type.startsWith("image/")) importTileset(f);
+  else msg("Drop a PNG tileset or a map JSON", "err");
+});
+
+/* ---------------------------------------------------------------- world: linked maps
+   Maps join two ways. A warp (door, ladder, cave mouth) sends you to a cell on
+   another map: warps["x,y"] = "house-1 4,7". A connection joins whole edges,
+   GBA-RPG style: { dir: "north", map: "route-2", offset: 3 } puts route-2 above
+   this map with its left column 3 cells right of ours. Saving a map writes the
+   other side of its links into the other files, so both maps always agree.   */
+const OPP = { north: "south", south: "north", east: "west", west: "east" };
+const DIR_STEP = { north: [0, -1], south: [0, 1], west: [-1, 0], east: [1, 0] };
+function parseWarp(s) {
+  const m = /^\s*([a-z0-9._-]+)(?:\s+(\d+)\s*[, ]\s*(\d+))?\s*$/i.exec(s || "");
+  return m ? { map: m[1], x: m[2] != null ? +m[2] : null, y: m[3] != null ? +m[3] : null } : null;
+}
+// Where a connected neighbor's top-left cell sits, in this map's coordinates.
+function linkOrigin(m, L, n) {
+  return L.dir === "north" ? [L.offset, -n.h] : L.dir === "south" ? [L.offset, m.h] : L.dir === "west" ? [-n.w, L.offset] : [m.w, L.offset];
+}
+const sameLinks = (a, b) => { const k = l => `${l.dir} ${l.map} ${l.offset | 0}`; return JSON.stringify(a.map(k).sort()) === JSON.stringify(b.map(k).sort()); };
+
+// Other maps, loaded from storage on demand. The open map is always state.map.
+const WORLD = new Map(), worldLoading = new Map();
+function loadWorld(name, fresh = false) {
+  if (!fresh && WORLD.has(name)) return Promise.resolve(WORLD.get(name));
+  if (worldLoading.has(name)) return worldLoading.get(name);
+  const job = (async () => {
+    try { const d = await host.readMap(name); if (!d) { WORLD.delete(name); return null; } const e = { map: await dataToMap(d), canvas: null }; WORLD.set(name, e); return e; }
+    catch { return null; } finally { worldLoading.delete(name); }
+  })();
+  worldLoading.set(name, job); return job;
+}
+// The map to draw or walk as a neighbor: the live open map when it is the one asked for.
+function neighborEntry(name) {
+  if (name === state.name) return state.play ? (state.play.self ||= { map: state.map, canvas: null }) : null;
+  const e = WORLD.get(name); if (!e && !worldLoading.has(name)) loadWorld(name).then(() => refreshUI());
+  return e || null;
+}
+function mapByName(name) { return name === state.name ? Promise.resolve({ map: state.map }) : loadWorld(name); }
+const walkable = (m, x, y) => { const a = m.resolved(x, y); return a !== "block" && a !== "water"; };
+
+// Where to land in a map when a door names only the map: its door back to us,
+// then any door without a target, then the player spawn, then the middle.
+function pickArrival(m, from) {
+  let free = null, spawn = null;
+  for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) {
+    const a = m.resolved(x, y);
+    if (a === "warp") { const w = parseWarp(m.warps[`${x},${y}`]); if (w && w.map === from) return [x, y]; if (!m.warps[`${x},${y}`] && !free) free = [x, y]; }
+    if (a === "spawn" && !spawn) spawn = [x, y];
+  }
+  return free || spawn || [m.w >> 1, m.h >> 1];
+}
+// The cells of the door under the cursor: it and the door cells beside it that share its target.
+function doorCells(m, x, y) {
+  if (m.resolved(x, y) !== "warp") return [[x, y]];
+  const out = [[x, y]], t = m.warps[`${x},${y}`];
+  for (const d of [-1, 1]) for (let xx = x + d; m.inb(xx, y) && m.resolved(xx, y) === "warp" && (!m.warps[`${xx},${y}`] || m.warps[`${xx},${y}`] === t); xx += d) out.push([xx, y]);
+  return out;
+}
+// Links on the edge the cursor sits on, nearest first.
+function linksAtCursor() {
+  const m = state.map, x = state.cx, y = state.cy, on = { north: y === 0, south: y === m.h - 1, west: x === 0, east: x === m.w - 1 };
+  const along = L => (L.dir === "north" || L.dir === "south" ? x : y) - L.offset;
+  return m.links.filter(L => on[L.dir]).sort((a, b) => {
+    const na = WORLD.get(a.map)?.map, nb = WORLD.get(b.map)?.map, len = (L, n) => n ? (L.dir === "north" || L.dir === "south" ? n.w : n.h) : 1;
+    const da = along(a) >= 0 && along(a) < len(a, na) ? 0 : 1, db = along(b) >= 0 && along(b) < len(b, nb) ? 0 : 1; return da - db;
+  });
+}
+// Best offset for a new connection: line up walkable cells across the seam.
+function autoOffset(m, dir, n) {
+  const vertical = dir === "north" || dir === "south", ours = vertical ? m.w : m.h, theirs = vertical ? n.w : n.h;
+  const mine = i => vertical ? walkable(m, i, dir === "north" ? 0 : m.h - 1) : walkable(m, dir === "west" ? 0 : m.w - 1, i);
+  const other = i => vertical ? walkable(n, i, dir === "north" ? n.h - 1 : 0) : walkable(n, dir === "west" ? n.w - 1 : 0, i);
+  const center = Math.round((ours - theirs) / 2); let best = center, bestScore = -Infinity;
+  for (let o = -(theirs - 1); o <= ours - 1; o++) {
+    let score = 0;
+    for (let i = Math.max(0, o); i < Math.min(ours, o + theirs); i++) { const a = mine(i), b = other(i - o); score += a && b ? 1 : a !== b ? -0.5 : 0; }
+    score -= Math.abs(o - center) * 0.01;
+    if (score > bestScore) { bestScore = score; best = o; }
+  }
+  return best;
+}
+
+// Keep a saved file's keys in the order Tallgrass writes them.
+const MAP_KEYS = ["format", "version", "name", "width", "height", "tileSize", "pack", "layers", "attributes", "warps", "connections", "imports"];
+function canonical(d) { const out = {}; for (const k of MAP_KEYS) if (k in d) out[k] = d[k]; for (const k of Object.keys(d)) if (!(k in out)) out[k] = d[k]; return out; }
+
+// After saving `name`, make every map it links to (or used to) agree with it.
+async function syncLinks(name, m, prev) {
+  const cands = new Set([...m.links.map(l => l.map), ...((prev && prev.connections) || []).map(c => c.map), ...[...state.returns.values()].map(r => r.map)]);
+  cands.delete(name);
+  const touched = [];
+  for (const other of cands) {
+    let d; try { d = await host.readMap(other); } catch { d = null; } if (!d) continue;
+    let changed = false;
+    const cur = Array.isArray(d.connections) ? d.connections : [];
+    const next = [...cur.filter(c => c.map !== name), ...m.links.filter(l => l.map === other).map(l => ({ dir: OPP[l.dir], map: name, offset: -l.offset || 0 }))];
+    if (!sameLinks(cur, next)) { changed = true; if (next.length) d.connections = next; else delete d.connections; }
+    for (const [k, r] of state.returns) {
+      if (r.map !== other || m.warps[k] !== `${r.map} ${r.x},${r.y}`) continue;
+      const back = `${name} ${k}`, rk = `${r.x},${r.y}`;
+      if (!d.warps || d.warps[rk] !== back) { d.warps = { ...(d.warps || {}), [rk]: back }; changed = true; }
+      const tm = (await dataToMap(d));
+      if (tm.inb(r.x, r.y) && tm.resolved(r.x, r.y) !== "warp" && d.attributes?.[r.y]) { d.attributes[r.y][r.x] = "warp"; changed = true; }
+    }
+    if (changed) { await host.writeMap(other, canonical(d)); WORLD.delete(other); touched.push(other); }
+  }
+  state.returns.clear();
+  return touched;
+}
+
+/* Following links in the editor: O goes through the door or edge under the
+   cursor, B comes back. Leaving a map with unsaved changes asks twice.     */
+const trail = []; let confirm = { key: "", until: 0 };
+function leaveOk(key, again) {
+  if (!state.dirty) return true;
+  const now = performance.now(); if (confirm.key === key && now < confirm.until) return true;
+  confirm = { key, until: now + 4000 };
+  msg(`Unsaved changes to ${state.name}. :w saves, or ${again} again to leave anyway (the session keeps them for :restore).`, "err");
+  return false;
+}
+async function openAt(name, x, y, note) {
+  const d = await host.readMap(name); if (!d) return msg(`No map called ${name}`, "err");
+  await openData(d, name, note); moveTo(x, y); centerOn(x, y);
+}
+async function followLink() {
+  const m = state.map, here = `${state.cx},${state.cy}`, w = parseWarp(m.warps[here]);
+  let to = null;
+  if (w) {
+    const e = await mapByName(w.map); if (!e) return msg(`This door leads to ${w.map}, which doesn't exist yet`, "err");
+    const [x, y] = w.x != null ? [w.x, w.y] : pickArrival(e.map, state.name); to = { map: w.map, x, y, how: "door" };
+  } else {
+    for (const L of linksAtCursor()) {
+      const e = await loadWorld(L.map); if (!e) continue;
+      const [ox, oy] = linkOrigin(m, L, e.map), [dx, dy] = DIR_STEP[L.dir], x = state.cx + dx - ox, y = state.cy + dy - oy;
+      if (e.map.inb(x, y)) { to = { map: L.map, x, y, how: L.dir + " edge" }; break; }
+    }
+  }
+  if (!to) return msg("Nothing to follow here. O goes through a door (:warp) or across a connected edge (:connect).", "err");
+  if (to.map === state.name) { trail.push({ map: state.name, x: state.cx, y: state.cy }); moveTo(to.x, to.y); return msg(`Door within ${state.name}, to ${to.x},${to.y}. B comes back.`); }
+  if (!leaveOk("O", "press O")) return;
+  trail.push({ map: state.name, x: state.cx, y: state.cy });
+  await openAt(to.map, to.x, to.y, `Through the ${to.how} into ${to.map} at ${to.x},${to.y}. B comes back.`);
+}
+async function goBack() {
+  const t = trail[trail.length - 1]; if (!t) return msg("Nothing to go back to. O follows a door or edge, B comes back.");
+  if (t.map === state.name) { trail.pop(); moveTo(t.x, t.y); return; }
+  if (!leaveOk("B", "press B")) return;
+  trail.pop(); await openAt(t.map, t.x, t.y, `Back in ${t.map}`);
+}
+function nudgeLink(d) {
+  const L = linksAtCursor()[0] || (state.map.links.length === 1 ? state.map.links[0] : null);
+  if (!L) return msg(state.map.links.length ? "Move the cursor to the edge with the link you want to slide" : "No connections yet. :connect north route-2 joins two maps.", "err");
+  const i = state.map.links.indexOf(L);
+  snapshotOp(() => { state.map.links[i] = { ...L, offset: L.offset + d }; });
+  msg(`${L.dir} link to ${L.map}, offset ${L.offset + d}. :w saves both maps.`);
+}
+
+/* Checking the whole world: which maps exist, where they sit, what is broken. */
+async function checkWorld(source) {
+  source ||= { names: async () => { const n = await host.listMaps(); return state.name && !n.includes(state.name) ? [...n, state.name] : n; }, get: async n => (await mapByName(n))?.map };
+  const names = await source.names(), maps = new Map(), problems = [], warps = [], links = [];
+  for (const n of names) { const m = await source.get(n); if (m) maps.set(n, m); }
+  const edges = new Map([...maps.keys()].map(n => [n, []]));
+  for (const [a, m] of maps) for (const L of m.links) {
+    const n = maps.get(L.map);
+    if (L.map === a) { problems.push(`${a}: ${L.dir} edge links to itself`); continue; }
+    if (!n) { problems.push(`${a}: ${L.dir} edge links to ${L.map}, which doesn't exist`); continue; }
+    const back = n.links.find(b => b.map === a && b.dir === OPP[L.dir]);
+    if (!back) problems.push(`${a}: ${L.dir} edge links to ${L.map}, but ${L.map} has no ${OPP[L.dir]} link back (save ${a} to add it)`);
+    else if (back.offset !== -L.offset) problems.push(`${a} and ${L.map} disagree on the offset of their ${L.dir}/${OPP[L.dir]} seam (${L.offset} and ${back.offset})`);
+    const vertical = L.dir === "north" || L.dir === "south", ours = vertical ? m.w : m.h, theirs = vertical ? n.w : n.h;
+    if (L.offset >= ours || L.offset + theirs <= 0) problems.push(`${a}: ${L.dir} link to ${L.map} doesn't touch the edge (offset ${L.offset})`);
+    const [dx, dy] = linkOrigin(m, L, n);
+    edges.get(a).push({ to: L.map, dx, dy }); edges.get(L.map).push({ to: a, dx: -dx, dy: -dy });
+    if (a < L.map || !back) links.push({ from: a, dir: L.dir, to: L.map, offset: L.offset });
+  }
+  for (const [a, m] of maps) {
+    for (const [k, t] of Object.entries(m.warps)) {
+      const [x, y] = k.split(",").map(Number), w = parseWarp(t);
+      if (!w) { problems.push(`${a} ${k}: can't read the door target "${t}". Use :warp map x,y`); continue; }
+      const n = maps.get(w.map);
+      if (!n) { problems.push(`${a} ${k}: door leads to ${w.map}, which doesn't exist`); continue; }
+      const [tx, ty] = w.x != null ? [w.x, w.y] : pickArrival(n, a);
+      if (!n.inb(tx, ty)) { problems.push(`${a} ${k}: door leads to ${w.map} ${tx},${ty}, outside that ${n.w}x${n.h} map`); continue; }
+      warps.push({ from: a, x, y, to: w.map, tx, ty });
+    }
+    for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) if (m.resolved(x, y) === "warp" && !(`${x},${y}` in m.warps)) problems.push(`${a} ${x},${y}: door has no target yet`);
+  }
+  // Lay out: each group of edge-connected maps keeps its real geometry; loose maps (interiors) go on shelves below.
+  const pos = new Map(), groups = [], order = [state.name, ...[...maps.keys()].filter(n => n !== state.name)].filter(n => maps.has(n));
+  for (const root of order) {
+    if (pos.has(root)) continue;
+    const g = [root], q = [root]; pos.set(root, [0, 0]);
+    while (q.length) {
+      const a = q.shift(), [ax, ay] = pos.get(a);
+      for (const e of edges.get(a)) {
+        const p = [ax + e.dx, ay + e.dy];
+        if (!pos.has(e.to)) { pos.set(e.to, p); g.push(e.to); q.push(e.to); }
+        else if (g.includes(e.to) && (pos.get(e.to)[0] !== p[0] || pos.get(e.to)[1] !== p[1]) && a < e.to) problems.push(`${a} and ${e.to} are joined in ways that don't fit together; check their offsets`);
+      }
+    }
+    groups.push(g);
+  }
+  const box = g => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const n of g) { const [x, y] = pos.get(n), m = maps.get(n); x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x + m.w); y1 = Math.max(y1, y + m.h); } return { x0, y0, x1, y1 }; };
+  const GAP = 6, big = groups.filter(g => g.length > 1 || maps.get(g[0]).links.length), loose = groups.filter(g => !big.includes(g));
+  let cx = 0, top = 0, bottom = 0;
+  for (const g of big) { const b = box(g); for (const n of g) { const [x, y] = pos.get(n); pos.set(n, [x - b.x0 + cx, y - b.y0]); } cx += b.x1 - b.x0 + GAP; bottom = Math.max(bottom, b.y1 - b.y0); }
+  const shelfW = Math.max(cx - GAP, 60); let sx = 0, sy = big.length ? bottom + GAP * 2 : 0, rowH = 0;
+  for (const [n] of loose) { const m = maps.get(n); if (sx && sx + m.w > shelfW) { sx = 0; sy += rowH + GAP; rowH = 0; } pos.set(n, [sx, sy]); sx += m.w + GAP; rowH = Math.max(rowH, m.h); }
+  for (const g of big) for (let i = 0; i < g.length; i++) for (let j = i + 1; j < g.length; j++) {
+    const [ax, ay] = pos.get(g[i]), a = maps.get(g[i]), [bx, by] = pos.get(g[j]), b = maps.get(g[j]);
+    if (ax < bx + b.w && bx < ax + a.w && ay < by + b.h && by < ay + a.h) problems.push(`${g[i]} and ${g[j]} overlap in the world; check their offsets`);
+  }
+  return { maps, pos, problems, warps, links, top };
+}
+
+async function exportWorld(dest) {
+  const W = await checkWorld(dest.source);
+  if (!W.maps.size) return msg("No saved maps yet. :w name saves this one.", "err");
+  const res = await host.resolveExport("world", { pick: dest.pick, dir: dest.dir }); if (!res) return msg("Export cancelled");
+  const keep = { map: state.map, pack: state.pack, name: state.name }, list = [];
+  try {
+    for (const [name, m] of W.maps) {
+      state.map = m; state.pack = m === keep.map ? keep.pack : m.pack || DEFAULT_PACK; state.name = name;
+      const { keys, data } = exportData();
+      await host.exportFiles(name, { json: fmtJSON(data), atlas: renderAtlas(keys), map: renderMap(m) }, { dir: res.dir });
+      list.push({ name, file: `${name}.json`, tiles: `${name}-tiles.png`, image: `${name}.png`, width: m.w, height: m.h, pack: state.pack });
+    }
+  } finally { Object.assign(state, keep); }
+  const world = { format: "tallgrass-world", version: 1, maps: list, connections: W.links, warps: W.warps, problems: W.problems };
+  await host.exportText({ dir: res.dir }, "world.json", fmtJSON(world) + "\n");
+  msg(`Exported ${list.length} maps and world.json to ${res.where}.${W.problems.length ? ` ${W.problems.length} link problem${W.problems.length > 1 ? "s are" : " is"} listed in world.json; :world shows ${W.problems.length > 1 ? "them" : "it"}.` : ""}`, "info");
+  return world;
+}
+
+/* The world view: every map laid out by its connections, doors as lines. */
+const WV = { data: null, sel: 0, scale: 4, cam: { x: 0, y: 0 }, thumbs: new Map(), names: [] };
+const wcv = () => $("#worldCanvas");
+async function openWorld() {
+  $("#world").hidden = false; $("#worldSide").innerHTML = `<p class="hint">Loading every map</p>`;
+  const W = await checkWorld(); WV.data = W; WV.thumbs.clear();
+  WV.names = [...W.maps.keys()].sort((a, b) => a === state.name ? -1 : b === state.name ? 1 : a.localeCompare(b));
+  WV.sel = 0; fitWorld(); drawWorld(); renderWorldSide();
+}
+function closeWorld() { $("#world").hidden = true; refreshUI(); }
+function worldThumb(n) { if (!WV.thumbs.has(n)) WV.thumbs.set(n, renderMap(WV.data.maps.get(n))); return WV.thumbs.get(n); }
+function fitWorld() {
+  const c = wcv(), W = WV.data; c.width = c.clientWidth * dpr || 800; c.height = c.clientHeight * dpr || 500;
+  let x1 = 1, y1 = 1; for (const [n, [x, y]] of W.pos) { const m = W.maps.get(n); x1 = Math.max(x1, x + m.w); y1 = Math.max(y1, y + m.h); }
+  const vw = c.width / dpr, vh = c.height / dpr;
+  WV.scale = Math.max(1, Math.min(12, Math.floor(Math.min((vw - 40) / x1, (vh - 40) / y1))));
+  WV.cam = { x: Math.min(-20, (x1 * WV.scale - vw) / 2), y: Math.min(-20, (y1 * WV.scale - vh) / 2) };
+}
+function drawWorld() {
+  const c = wcv(), g = c.getContext("2d"), W = WV.data, s = WV.scale; if (!W) return;
+  if (c.width !== Math.round(c.clientWidth * dpr) && c.clientWidth) { c.width = c.clientWidth * dpr; c.height = c.clientHeight * dpr; }
+  g.setTransform(dpr, 0, 0, dpr, 0, 0); g.imageSmoothingEnabled = false;
+  g.fillStyle = CANVAS.bg; g.fillRect(0, 0, c.width, c.height);
+  const at = (n, x, y) => { const [px0, py0] = W.pos.get(n); return [(px0 + x) * s - WV.cam.x, (py0 + y) * s - WV.cam.y]; };
+  g.font = "12px " + getComputedStyle(document.documentElement).getPropertyValue("--mono"); g.textBaseline = "bottom";
+  for (const n of W.maps.keys()) { const m = W.maps.get(n), [x, y] = at(n, 0, 0); g.drawImage(worldThumb(n), x, y, m.w * s, m.h * s); }
+  for (const n of W.maps.keys()) { // borders and labels after every map, so touching maps never cover them
+    const m = W.maps.get(n), [x, y] = at(n, 0, 0), sel = WV.names[WV.sel] === n, col = sel ? MODES.visual.color : n === state.name ? MODES.normal.color : CANVAS.border;
+    g.lineWidth = sel ? 3 : n === state.name ? 2 : 1; g.strokeStyle = col; g.strokeRect(x - .5, y - .5, m.w * s + 1, m.h * s + 1);
+    const label = n + (n === state.name ? "  open" : ""), tw = g.measureText(label).width;
+    g.fillStyle = "rgba(0,0,0,.62)"; g.fillRect(x + 4, y + 4, tw + 10, 18); g.fillStyle = sel ? MODES.visual.color : "#fff"; g.fillText(label, x + 9, y + 19);
+  }
+  g.lineWidth = 2;
+  for (const w of W.warps) {
+    const [ax, ay] = at(w.from, w.x + .5, w.y + .5), [bx, by] = at(w.to, w.tx + .5, w.ty + .5);
+    const qx = (ax + bx) / 2 - (by - ay) * .25, qy = (ay + by) / 2 + (bx - ax) * .25; // a gentle arc to one side
+    g.strokeStyle = ATTR.warp.color; g.globalAlpha = .85; g.beginPath(); g.moveTo(ax, ay); g.quadraticCurveTo(qx, qy, bx, by); g.stroke(); g.globalAlpha = 1;
+    g.fillStyle = ATTR.warp.color; g.beginPath(); g.arc(ax, ay, 3, 0, 7); g.arc(bx, by, 3, 0, 7); g.fill();
+  }
+  const bad = MODES.erase.color;
+  for (const p of W.problems) { const m = /^(\S+) (\d+),(\d+):/.exec(p); if (!m || !W.pos.has(m[1])) continue; const [x, y] = at(m[1], +m[2] + .5, +m[3] + .5); g.strokeStyle = bad; g.lineWidth = 2; g.beginPath(); g.moveTo(x - 5, y - 5); g.lineTo(x + 5, y + 5); g.moveTo(x + 5, y - 5); g.lineTo(x - 5, y + 5); g.stroke(); }
+}
+function renderWorldSide() {
+  const W = WV.data, el = $("#worldSide"), esc = t => t.replace(/[<&]/g, ch => ch === "<" ? "&lt;" : "&amp;");
+  el.innerHTML = `<h3>Maps</h3><ul class="wlist">${WV.names.map((n, i) => { const m = W.maps.get(n); return `<li class="${i === WV.sel ? "sel" : ""}" data-i="${i}"><span>${esc(n)}</span><span class="c">${m.w}x${m.h}</span></li>`; }).join("")}</ul>`
+    + `<h3>${W.problems.length ? `${W.problems.length} problem${W.problems.length > 1 ? "s" : ""}` : "No problems"}</h3>`
+    + (W.problems.length ? `<ul class="wprob">${W.problems.map(p => `<li>${esc(p)}</li>`).join("")}</ul>` : `<p class="hint">Every door and edge leads somewhere.</p>`)
+    + `<p class="hint">${W.links.length} connection${W.links.length === 1 ? "" : "s"}, ${W.warps.length} door${W.warps.length === 1 ? "" : "s"}</p>`;
+}
+function selectWorld(i, center = true) {
+  WV.sel = (i + WV.names.length) % WV.names.length;
+  if (center) { const c = wcv(), n = WV.names[WV.sel], [x, y] = WV.data.pos.get(n), m = WV.data.maps.get(n), s = WV.scale; WV.cam = { x: (x + m.w / 2) * s - c.clientWidth / 2, y: (y + m.h / 2) * s - c.clientHeight / 2 }; }
+  drawWorld(); renderWorldSide();
+}
+async function openFromWorld() {
+  const n = WV.names[WV.sel]; if (!n) return;
+  if (n === state.name) return closeWorld();
+  if (!leaveOk("world:" + n, "press Enter")) return;
+  closeWorld(); trail.push({ map: state.name, x: state.cx, y: state.cy });
+  const m = WV.data.maps.get(n), [x, y] = pickArrival(m, state.name);
+  await openAt(n, x, y, `Opened ${n} from the world view. B comes back.`);
+}
+function worldZoom(d, ax, ay) {
+  const c = wcv(); ax ??= c.clientWidth / 2; ay ??= c.clientHeight / 2;
+  const s0 = WV.scale, s1 = Math.max(1, Math.min(16, s0 + d)); if (s1 === s0) return;
+  WV.cam.x = (WV.cam.x + ax) / s0 * s1 - ax; WV.cam.y = (WV.cam.y + ay) / s0 * s1 - ay; WV.scale = s1; drawWorld();
+}
+function worldKey(e) {
+  const d = DIRS[e.code], step = e.shiftKey ? 240 : 60;
+  if (d) { WV.cam.x += d[0] * step; WV.cam.y += d[1] * step; drawWorld(); return true; }
+  if (e.key === "Escape" || e.key === "q") { closeWorld(); return true; }
+  if (e.key === "Tab") { selectWorld(WV.sel + (e.shiftKey ? -1 : 1)); return true; }
+  if (e.key === "Enter") { openFromWorld(); return true; }
+  if (e.key === "+") { worldZoom(1); return true; } if (e.key === "-") { worldZoom(-1); return true; }
+  if (e.key === "=" || e.key === "0") { fitWorld(); drawWorld(); return true; }
+  return true; // the world view keeps every other key to itself
+}
+function worldHit(e) {
+  const r = wcv().getBoundingClientRect(), s = WV.scale, wx = (e.clientX - r.left + WV.cam.x) / s, wy = (e.clientY - r.top + WV.cam.y) / s;
+  return WV.names.findIndex(n => { const [x, y] = WV.data.pos.get(n), m = WV.data.maps.get(n); return wx >= x && wy >= y && wx < x + m.w && wy < y + m.h; });
+}
+
+/* ---------------------------------------------------------------- export */
+function atlasKeys() {
+  const used = new Set(), m = state.map; for (const L of LAYERS) for (const row of m.layers[L]) for (const k of row) if (k) used.add(k);
+  const out = []; for (const t of Object.values(TILES)) { if (!(t.imported || t.pack === state.pack || used.has(t.key))) continue; if (t.auto) for (let i = 0; i < 16; i++) out.push(`${t.key}#${i}`); else out.push(t.key); } return out; }
+function canvasForKey(k) { const [b, m] = k.split("#"); const t = TILES[b]; if (!t) return MISSING; return m != null && t.auto ? t.variants[+m] : t.canvas; }
+function fmtJSON(v, ind = 0) {
+  const pad = " ".repeat(ind);
+  if (Array.isArray(v) && v.length && v.every(Array.isArray)) return "[\n" + v.map(r => pad + "  " + JSON.stringify(r)).join(",\n") + "\n" + pad + "]";
+  if (v && typeof v === "object" && !Array.isArray(v) && Object.values(v).some(x => x && typeof x === "object")) return "{\n" + Object.entries(v).map(([k, x]) => pad + "  " + JSON.stringify(k) + ": " + fmtJSON(x, ind + 2)).join(",\n") + "\n" + pad + "}";
+  return JSON.stringify(v);
+}
+function exportData() {
+  const m = state.map, keys = atlasKeys(), index = new Map(keys.map((k, i) => [k, i])), name = state.name;
+  const tileIndices = {}; for (const L of LAYERS) tileIndices[L] = Array.from({ length: m.h }, (_, y) => Array.from({ length: m.w }, (_, x) => { const k = renderKey(m, L, x, y); return k == null ? -1 : (index.get(k) ?? -1); }));
+  const collision = Array.from({ length: m.h }, (_, y) => Array.from({ length: m.w }, (_, x) => m.resolved(x, y)));
+  const events = []; let spawn = null;
+  for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) { const r = collision[y][x]; if (r === "warp") { const target = m.warps[`${x},${y}`] || "", w = parseWarp(target); events.push({ type: "warp", x, y, target, ...(w ? { map: w.map, ...(w.x != null ? { toX: w.x, toY: w.y } : {}) } : {}) }); } if (r === "spawn") { events.push({ type: "spawn", x, y }); spawn ??= { x, y }; } }
+  return { keys, data: { format: "tallgrass-map", version: 1, name, width: m.w, height: m.h, tileSize: TILE, ...packField(),
+    tileset: { image: `${name}-tiles.png`, columns: 16, tileCount: keys.length },
+    spawn, events, tileIndices, collision,
+    layers: m.layers, attributes: m.attrs, warps: m.warps, ...linkField(m),
+    imports: IMPORTS.map(i => ({ id: i.id, name: i.name, src: i.src, attrs: i.attrs })), tileKeys: keys } };
+}
+function renderAtlas(keys) { const rows = Math.ceil(keys.length / 16), c = mk(256, rows * 16), x = c.getContext("2d"); keys.forEach((k, i) => x.drawImage(canvasForKey(k), (i % 16) * 16, Math.floor(i / 16) * 16)); return c; }
+function renderMap(m) { const c = mk(m.w * 16, m.h * 16), x = c.getContext("2d"); for (const L of LAYERS) for (let yy = 0; yy < m.h; yy++) for (let xx = 0; xx < m.w; xx++) { const cc = cellCanvas(m, L, xx, yy); if (cc) x.drawImage(cc, xx * 16, yy * 16); } return c; }
+function offer(name, blob) { try { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000); } catch { } }
+const toBlob = c => new Promise(r => c.toBlob(r, "image/png"));
+function gameCode(name) {
+  return `// Tallgrass map loader. Put ${name}.json and ${name}-tiles.png next to your game.
+export async function loadMap(url = "${name}.json") {
+  const map = await (await fetch(url)).json();
+  const tiles = new Image();
+  tiles.src = new URL(map.tileset.image, new URL(url, location.href)).href;
+  await tiles.decode();
+  return { map, tiles };
+}
+
+// Draw ground and objects, then your sprites, then overhead (tree tops, roofs).
+export function drawLayer(ctx, { map, tiles }, layer, camX = 0, camY = 0, scale = 3) {
+  const T = map.tileSize, cols = map.tileset.columns, grid = map.tileIndices[layer];
+  ctx.imageSmoothingEnabled = false;
+  for (let y = 0; y < map.height; y++) {
+    for (let x = 0; x < map.width; x++) {
+      const i = grid[y][x];
+      if (i < 0) continue;
+      ctx.drawImage(tiles, (i % cols) * T, Math.floor(i / cols) * T, T, T,
+        Math.round((x * T - camX) * scale), Math.round((y * T - camY) * scale), T * scale, T * scale);
+    }
+  }
+}
+
+// Collision: "walk" | "block" | "grass" | "water" | "ledge" | "warp" | "spawn"
+export function canEnter(map, x, y, dy = 0) {
+  if (x < 0 || y < 0 || x >= map.width || y >= map.height) return false;
+  const c = map.collision[y][x];
+  if (c === "block" || c === "water") return false;
+  if (c === "ledge") return dy === 1; // hop down only, land one tile further
+  return true;
+}
+
+export const isEncounterTile = (map, x, y) => map.collision[y][x] === "grass";
+export const warpAt = (map, x, y) => map.events.find(e => e.type === "warp" && e.x === x && e.y === y);
+export const spawnPoint = map => map.spawn ?? { x: 0, y: 0 };
+`;
+}
+let exportTab = "json";
+async function doExport(dest = {}) {
+  const { keys, data } = exportData(), name = state.name, json = fmtJSON(data);
+  const atlas = renderAtlas(keys), mapC = renderMap(state.map);
+  let res;
+  try { res = await host.exportFiles(name, { json, atlas, map: mapC }, dest); }
+  catch (err) { return msg(`Export failed: ${err.message}`, "err"); }
+  if (!res) return msg("Export cancelled");
+  $("#exTitle").textContent = `Export ${name}`;
+  $("#exHint").textContent = "Esc closes · 1 2 3 switch tabs · y copies";
+  $("#exJson").value = json; $("#exCode").textContent = gameCode(name);
+  $("#exFiles").textContent = host.native ? `Wrote ${name}.json, ${name}-tiles.png, ${name}.png to ${res.where}. :export! picks another folder.` : `${name}.json, ${name}-tiles.png, ${name}.png. If the downloads were blocked, copy from here.`;
+  const mi = $("#exMap"); mi.src = mapC.toDataURL(); mi.style.width = Math.min(mapC.width * 2, 1200) + "px";
+  const ai = $("#exAtlas"); ai.src = atlas.toDataURL(); ai.style.width = atlas.width * 2 + "px";
+  $("#exMapCap").textContent = `${name}.png, ${mapC.width}x${mapC.height}px (shown 2x)`;
+  $("#exAtlasCap").textContent = `${name}-tiles.png, ${keys.length} tiles, 16 per row`;
+  $("#pane-img .hint").hidden = host.native;
+  setExportTab("json"); $("#export").hidden = false;
+  msg(`Exported ${name}: map JSON, tileset PNG and a preview PNG, to ${res.where}`, "info");
+}
+function setExportTab(t) { exportTab = t; for (const id of ["json", "img", "code"]) { $(`#pane-${id}`).hidden = id !== t; $(`#tab-${id}`).setAttribute("aria-selected", id === t); } }
+async function copyText(text, el) {
+  try { await host.copy(text); msg("Copied to the clipboard", "info"); }
+  catch { if (el && el.select) { el.focus(); el.select(); msg("Press Ctrl-c to copy the selected text", "info"); } else { const r = document.createRange(); r.selectNodeContents(el); getSelection().removeAllRanges(); getSelection().addRange(r); msg("Press Ctrl-c to copy the selected text", "info"); } }
+}
+function exportKey(e) {
+  if (e.key === "Escape" || e.key === "q") { $("#export").hidden = true; refreshUI(); return true; }
+  if (e.key === "1") { setExportTab("json"); return true; } if (e.key === "2") { setExportTab("img"); return true; } if (e.key === "3") { setExportTab("code"); return true; }
+  if (e.key === "Tab") { const o = ["json", "img", "code"]; setExportTab(o[(o.indexOf(exportTab) + (e.shiftKey ? 2 : 1)) % 3]); return true; }
+  if (e.key === "y") { if (exportTab === "code") copyText($("#exCode").textContent, $("#exCode")); else copyText($("#exJson").value, $("#exJson")); return true; }
+  return false;
+}
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => setExportTab(b.dataset.tab));
+$("#copyJson").onclick = () => copyText($("#exJson").value, $("#exJson"));
+$("#copyCode").onclick = () => copyText($("#exCode").textContent, $("#exCode"));
+$("#export").addEventListener("mousedown", e => { if (e.target.id === "export") { $("#export").hidden = true; refreshUI(); } });
+$("#exJson").addEventListener("keydown", e => { if (e.key === "Escape") { e.preventDefault(); e.target.blur(); $("#export").hidden = true; refreshUI(); } });
+
+{
+  const c = $("#worldCanvas"); let wd = null;
+  c.addEventListener("pointerdown", e => { const i = worldHit(e); if (i >= 0) selectWorld(i, false); wd = { x: e.clientX, y: e.clientY, cx: WV.cam.x, cy: WV.cam.y }; c.setPointerCapture(e.pointerId); });
+  c.addEventListener("pointermove", e => { if (!wd) return; WV.cam.x = wd.cx - (e.clientX - wd.x); WV.cam.y = wd.cy - (e.clientY - wd.y); drawWorld(); });
+  c.addEventListener("pointerup", () => { wd = null; });
+  c.addEventListener("dblclick", e => { const i = worldHit(e); if (i >= 0) { selectWorld(i, false); openFromWorld(); } });
+  c.addEventListener("wheel", e => { e.preventDefault(); const r = c.getBoundingClientRect(); if (e.ctrlKey || e.metaKey) worldZoom(e.deltaY < 0 ? 1 : -1, e.clientX - r.left, e.clientY - r.top); else { WV.cam.x += e.deltaX; WV.cam.y += e.deltaY; drawWorld(); } }, { passive: false });
+  $("#worldSide").addEventListener("click", e => { const li = e.target.closest("[data-i]"); if (li) selectWorld(+li.dataset.i); });
+  $("#world").addEventListener("mousedown", e => { if (e.target.id === "world") closeWorld(); });
+  new ResizeObserver(() => { if (!$("#world").hidden) drawWorld(); }).observe(c);
+}
+
+/* ---------------------------------------------------------------- help */
+const HELP = [
+  ["Command bar", [["Enter  :", "open it; the list above shows what you can type"], ["Tab", "finish the word: commands, map names, directions"], ["↑  ↓", "bring back earlier commands"], ["Enter", "run the line"], ["Esc", "close without running"], [":tutorial", "a 2-minute hands-on lesson"]]],
+  ["Move", [["W A S D", "move one cell, arrows work too"], ["Shift", "hold with WASD to move four cells"], ["+  -  =", "zoom in, out, reset"], ["wheel", "pan, Ctrl-wheel zooms"], [":12,8", "jump to a cell"]]],
+  ["Paint", [["Space", "tap for one cell, hold while moving to paint"], ["X", "tap to clear, hold while moving to erase"], ["F", "fill the connected area"], ["C", "pick the tile under the cursor"], ["Z", "undo, Shift-Z redo"], ["mouse", "drag paints, right-click picks"]]],
+  ["Select", [["V", "start a rectangle, WASD grows it"], ["Space  F", "fill it (stamps tile across it)"], ["X", "clear it on this layer"], ["C", "copy every layer"], ["Ctrl-C  Ctrl-V", "copy the cell, paste at the cursor"], ["Esc", "cancel"]]],
+  ["Tiles and layers", [["Q  E", "previous or next tile"], ["R", "swap back to the last tile"], ["T", "find a tile by name"], ["1  2  3  4", "Ground, Objects, Overhead, Collision"], ["Tab", "cycle layers"], ["G  H", "grid, collision overlay"]]],
+  ["Files", [["Enter  :", "open the command bar"], [":w name", host.native ? `save to ${host.where} (Ctrl-S)` : "save in this browser (Ctrl-S)"], [":e name  :ls", "open or list saved maps"], [":new 40x30", "blank grass map"], [":restore", "reopen your last session"], [":gen 40x30 7", "generate a route (7 is the seed)"], [":pack name", "switch tile set, :pack lists them"], [":export", "JSON + PNGs + game code"], ...(host.native ? [[":export!", "pick the folder, e.g. your game assets"], [":q  :wq", "quit, save and quit"]] : []), [":import  :load", "tileset PNG, map JSON"]]],
+  ["Linked maps", [[":warp house-1", "the cursor's door leads there (lands on its door)"], [":warp! house-1", "same, and :w writes the way back"], [":connect north route-2", "join an edge; paths line up by themselves"], ["[  ]", "slide the connection at the cursor's edge"], ["O  B", "go through the door or edge, come back"], [":world", "every map, doors and edges, what's broken"], [":links  :rename name", "check this map, rename and fix links"], [":export world", "every map plus world.json"]]],
+  ["World and play", [["P", "walk the map with WASD, Esc to stop"], [":spawn", "player starts at the cursor"], [":warp house-1 4,7", "door to a cell"], [":resize 50x40", "grow or crop the map"], [":attr block", "default for an imported tile"]]],
+];
+function openHelp() {
+  const g = $("#helpGrid");
+  if (!g.childElementCount) for (const [title, rows] of HELP) {
+    const d = document.createElement("div"); d.innerHTML = `<h3>${title}</h3><dl>${rows.map(([k, v]) => `<dt>${k.split("  ").map(x => `<kbd>${x}</kbd>`).join(" ")}</dt><dd>${v}</dd>`).join("")}</dl>`; g.appendChild(d);
+  }
+  $("#help").hidden = false;
+}
+$("#helpBtn").onclick = e => { e.currentTarget.blur(); openHelp(); };
+$("#tutBtn").onclick = e => { e.currentTarget.blur(); startLesson(); };
+$("#help").addEventListener("mousedown", () => { $("#help").hidden = true; });
+
+/* ---------------------------------------------------------------- boot */
+function frame(now) { updatePlay(now); render(now); if (state.play) refreshUI(); requestAnimationFrame(frame); }
+function focusHint() { $("#focusHint").hidden = document.hasFocus(); }
+window.addEventListener("focus", focusHint); window.addEventListener("blur", focusHint);
+new ResizeObserver(() => { resizeCanvas(); follow(); }).observe(cv);
+
+/* Headless jobs from the native shell: `tallgrass --export` and the icon build. */
+async function runJob(job) {
+  const port = window.webkit.messageHandlers.tallgrass;
+  const done = r => port.postMessage(JSON.stringify({ op: "jobDone", ...r }));
+  try {
+    if (job.type === "icon") {
+      const s = job.size || 256, c = mk(s, s), x = c.getContext("2d"); x.imageSmoothingEnabled = false;
+      x.drawImage(TILES.tall_grass.canvas, 0, 0, s, s);
+      return done({ ok: true, png: c.toDataURL() });
+    }
+    if (job.type === "world") {
+      const maps = new Map(); for (const [n, d] of Object.entries(job.maps)) maps.set(n, await dataToMap(d));
+      state.name = ""; state.map = new TMap(1, 1);
+      const W = await exportWorld({ dir: job.dest.dir, source: { names: async () => [...maps.keys()], get: async n => maps.get(n) } });
+      return done({ ok: true, name: "world", maps: W ? W.maps.length : 0, problems: W ? W.problems : [] });
+    }
+    const d = job.map;
+    state.map = await dataToMap(d); state.pack = state.map.pack; state.name = slug(job.name || d.name) || "untitled";
+    const { keys, data } = exportData();
+    const res = await host.exportFiles(state.name, { json: fmtJSON(data), atlas: renderAtlas(keys), map: renderMap(state.map) }, job.dest || {});
+    done({ ok: true, where: res.where, name: state.name });
+  } catch (err) { done({ ok: false, error: err.message || String(err) }); }
+}
+
+async function boot() {
+  buildAssets();
+  if (host.job) return runJob(host.job);
+  $("#logo").src = brushIcon("tall_grass");
+  // Every launch starts on a fresh grass field. Last session is kept for :restore.
+  let prev = null; try { prev = await host.getSession("session"); } catch { }
+  let hadPrev = false;
+  try { const s = JSON.parse(prev || "null"); if (s && s.map) { await host.setSession("previous", prev); hadPrev = true; } } catch { }
+  // Launch in the pack you last switched to (Classic until you pick another).
+  let prefs = {}; try { prefs = JSON.parse(await host.getSession("prefs") || "{}") || {}; } catch { }
+  state.pack = PACKS[prefs.pack] ? prefs.pack : DEFAULT_PACK;
+  const P = PK(), fresh = state.pack === DEFAULT_PACK ? "Fresh grass field" : `Fresh ${P.name} map`;
+  state.map = new TMap(40, 28, P.ground); state.name = "untitled"; state.dirty = false;
+  state.brush = P.brush || P.ground; state.prevBrush = state.brush; state.layer = "ground";
+  state.cx = 20; state.cy = 14;
+  resizeCanvas(); centerOn(state.cx, state.cy); refreshUI(); focusHint();
+  const other = state.pack === DEFAULT_PACK ? "" : " :pack classic switches back.";
+  if (!prefs.tutorialSeen) msg(`${fresh}. New here? Press Enter, type tutorial and press Enter again for a 2-minute lesson on the command bar (or click Tutorial at the top).`, "info"); else
+  msg(hadPrev ? `${fresh}. :restore brings back your last session, :e opens a saved map.${other}` : `${fresh}. WASD moves, hold Space to paint, Q and E change tiles, :gen makes a sample route, ? shows every key.${other}`, "info");
+  refreshMapNames();
+  if (host.openPath) await runCommand("e " + host.openPath);
+  requestAnimationFrame(frame);
+}
+boot();
+</script>

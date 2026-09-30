@@ -1,0 +1,13 @@
+{
+  "name": "tallgrass",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "tests/run-native.sh && node tests/browser.mjs",
+    "test:native": "tests/run-native.sh",
+    "test:browser": "node tests/browser.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.55.0"
+  }
+}
